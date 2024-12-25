@@ -1,0 +1,40 @@
+{
+  "nodeModulesDir": "auto",
+  "tasks": {},
+  "compilerOptions": {
+    "lib": [
+      "deno.ns",
+      "dom"
+    ]
+  },
+  "imports": {
+    "@/shared/": "./shared/",
+    "@/watcher/": "./watcher/src/",
+    "@/trader/": "./trader/src/",
+    "node:": "https://deno.land/std@0.203.0/node/",
+    "@solana/web3.js": "npm:@solana/web3.js@^1.98.0",
+    "@std/assert": "jsr:@std/assert@1",
+    "axios": "npm:axios@^1.7.9",
+    "bs58": "npm:bs58@^6.0.0",
+    "dotenv": "npm:dotenv@^16.4.7"
+  },
+  "lint": {
+    "rules": {
+      "recommended": true, 
+      "tags": [
+        "recommended"
+      ], 
+      "exclude": [
+        "no-unused-vars"
+      ]
+    }
+  },
+  "fmt": {
+    "options": {
+      "useTabs": false,
+      "lineWidth": 120,
+      "indentWidth": 2,
+      "singleQuote": true
+    }
+  }
+}

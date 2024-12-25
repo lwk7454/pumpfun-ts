@@ -1,0 +1,6 @@
+{
+  "extends": "../deno.json",
+  "tasks": {
+    "start": "deno run -A src/main.ts"
+  }
+}

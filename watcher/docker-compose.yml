@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    # 1) Expose the usual InfluxDB port
+    ports:
+      - "8086:8086"
+    # 2) Use a named volume for data persistence
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      # We'll set credentials via environment variables, possibly from an .env file.
+      DOCKER_INFLUXDB_INIT_USERNAME: "${INFLUXDB_INIT_USERNAME}"
+      DOCKER_INFLUXDB_INIT_PASSWORD: "${INFLUXDB_INIT_PASSWORD}"
+      DOCKER_INFLUXDB_INIT_ORG: "${INFLUXDB_INIT_ORG}"
+      DOCKER_INFLUXDB_INIT_BUCKET: "${INFLUXDB_INIT_BUCKET}"
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "${INFLUXDB_INIT_ADMIN_TOKEN}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  watcher:
+    build: .
+    container_name: market-watcher
+    depends_on:
+      - influxdb:
+          condition: service_healthy
+    environment:
+      INFLUXDB_URL: "http://influxdb:8086"
+      INFLUXDB_TOKEN: "${INFLUXDB_INIT_ADMIN_TOKEN}"
+      INFLUXDB_ORG: "${INFLUXDB_INIT_ORG}"
+      INFLUXDB_BUCKET: "${INFLUXDB_INIT_BUCKET}"
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
