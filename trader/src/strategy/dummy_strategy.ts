@@ -1,25 +1,27 @@
 // strategy/dummy_strategy.ts
 
-import { Strategy } from "../interfaces.ts"
+import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
 
-/**
- * A very simple / placeholder strategy.
- * - Buys on the first market cap update
- * - Sells on the second update
- * - Then it finishes
- */
-export class DummyStrategy implements Strategy {
-  private updateCount = 0;
+export class DummyStrategy extends Strategy {
 
-  onMarketCapUpdate(token: string, _newMarketCap: number): "buy" | "sell" | "hold" {
-    this.updateCount++
-    if (this.updateCount === 1) {
-      console.log(`[DummyStrategy] First update for ${token}. Deciding to BUY.`)
-      return "buy"
-    } else if (this.updateCount === 2) {
-      console.log(`[DummyStrategy] Second update for ${token}. Deciding to SELL.`)
-      return "sell"
-    }
-    return "hold"
+  constructor(events: TokenEvent[], actions: TradeAction[], baseBid: number) {
+    super(events, actions, baseBid)
+  }
+
+  onMarketCapUpdate(event: TokenEvent): Decision {
+    return { action: "hold" }
+  }
+
+  onInit(token: string): void {
+    console.log(`[DummyStrategy] Initialized for ${token}.`)
+  }
+
+  onClose(token: string): void {
+    console.log(`[DummyStrategy] Closed for ${token}.`)
+  }
+
+  onHeartbeat(): Decision {
+    console.log(`[DummyStrategy] Heartbeat.`)
+    return { action: "hold" }
   }
 }

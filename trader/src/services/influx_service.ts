@@ -1,69 +1,154 @@
-// services/influx_service.ts
+import { InfluxDB, QueryApi, Point, WriteApi} from '@influxdata/influxdb-client'
 
-export interface TradeRecord {
-  token: string
-  strategy: string
-  action: "buy" | "sell"
-  amount: number          // Number of tokens or SOL
-  price?: number          // If you want to store price
-  timestamp: number       // Time of buy/sell
-  profitLoss?: number     // For sell events
+// Define a generic interface for query results
+export type QueryResult<T = Record<string, unknown>> ={
+  _result: string
+  _table: number
+  _start: string
+  _stop: string
+  _time: string
+  _value: number
+  _field: string
+  _measurement: string
+  mint: string
+} & T
+
+export type BasePoint = Record<string, unknown> & {
+  _measurement: string
+  _time: string
+  _field: string
+  _value: number
 }
 
+// Pagination options interface
+interface PaginationOptions {
+  pageSize: number
+  fluxQuery: string
+}
+
+const TAGS = [
+  "traderPublicKey",
+  "strategy",
+  "token",
+  "action",
+]
+
 export class InfluxService {
-  constructor(
-    private influxUrl: string,
-    private token: string,
-    private org: string,
-    private bucket: string,
-  ) { }
+  public client: InfluxDB
+  public queryApi: QueryApi
+  private writeApi: WriteApi
+  private bucket: string
 
-  async recordTradeEvent(record: TradeRecord): Promise<void> {
-    console.log("[InfluxService] Recording trade event:", record)
-    // TODO: Implement real InfluxDB write logic
-  }
+  constructor() {
+    const url = Deno.env.get("INFLUX_URL") || "http://localhost:8086"
+    const token = Deno.env.get("INFLUX_TOKEN")
+    const org = Deno.env.get("INFLUX_ORG")
+    const bucket = Deno.env.get("INFLUX_BUCKET")
 
-  /**
-   * Example method to fetch tokens minted in the last X ms (used by live mode).
-   * In practice, you might check a measurement e.g. "new_tokens" that has a record
-   * of minted tokens with a timestamp.
-   */
-  async listNewTokensSince(_timestampMs: number): Promise<string[]> {
-    // TODO: Implement real query. This is a stub that returns a random token or empty.
-    const rand = Math.random()
-    if (rand < 0.3) {
-      return ["DummyMint_" + Date.now()] // 30% chance of returning a new token
+    if (!url || !token || !org || !bucket) {
+      throw new Error("InfluxDB credentials are not set")
     }
-    return []
+
+    this.bucket = bucket
+    this.client = new InfluxDB({ url, token })
+    this.queryApi = this.client.getQueryApi(org)
+    this.writeApi = this.client.getWriteApi(org, bucket, 's') // 's' for seconds precision
   }
 
   /**
-   * Example method for historical mode: returns a list of tokens minted between start and end.
-   * This is used to discover which tokens you should replay data for.
+   * Retrieves query results in paginated form.
+   * @param options Pagination options including page size and Flux query.
+   * @returns An async generator yielding pages of query results.
    */
-  async listTokensMintedInRange(start: string, end: string): Promise<string[]> {
-    console.log(`[InfluxService] Listing tokens minted between ${start} and ${end}.`)
-    // TODO: Implement real logic
-    // For demonstration, return a couple of dummy tokens
-    return ["HistTokenABC", "HistTokenXYZ"]
+  async *paginateQuery<T extends Record<string, unknown>>(options: PaginationOptions): AsyncGenerator<Array<QueryResult<T>>> {
+    const { pageSize, fluxQuery } = options
+    let hasMore = true
+    let lastTime: string | null = null
+
+    while (hasMore) {
+      let paginatedQuery = `from(bucket: "${this.bucket}")` + fluxQuery
+      if (lastTime) {
+        paginatedQuery += ` |> filter(fn: (r) => r._time > ${lastTime})`
+      }
+      paginatedQuery += ` |> limit(n: ${pageSize})`
+
+      console.log('Paginated Query: ', paginatedQuery)
+
+      const page: Array<QueryResult<T>> = []
+      const rows = await this.queryApi.collectRows<QueryResult<T>>(paginatedQuery)
+      page.push(...rows)
+
+      if (page.length > 0) {
+        lastTime = rows.at(-1)!._time
+        yield page
+      } else {
+        console.log('No more pages: ', { page, pageSize })
+        hasMore = false
+      }
+    }
   }
 
   /**
-   * Example method to fetch historical market data for a token in a time range.
-   * Returns points with a `time` and `marketCap`.
+   * Executes a Flux query and processes each page of records using a callback function.
+   * @param fluxQuery The Flux query string.
+   * @param pageSize Number of records per page.
+   * @param callback A function to process each page of query results.
    */
-  async fetchHistoricalMarketData(
-    token: string,
-    startTime: string,
-    endTime: string,
-  ): Promise<Array<{ time: string; marketCap: number }>> {
-    console.log(`[InfluxService] Fetching historical data for ${token}, from ${startTime} to ${endTime}.`)
-    // TODO: Real InfluxDB query returning sorted or unsorted time series data.
-    // For demonstration, we provide three sample points:
-    return [
-      { time: startTime, marketCap: 10 },
-      { time: new Date(new Date(startTime).getTime() + 60_000).toISOString(), marketCap: 25 },
-      { time: endTime, marketCap: 50 },
-    ]
+  async processRecords<T extends Record<string, unknown>>(
+    fluxQuery: string,
+    pageSize: number = 1000,
+    callback: (page: Array<QueryResult<T>>) => Promise<void> | void
+  ): Promise<void> {
+    for await (const page of this.paginateQuery<T>({ fluxQuery, pageSize })) {
+      await callback(page)
+    }
+  }
+
+  /**
+   * Executes a Flux query and retrieves all records in memory with pagination.
+   * @param fluxQuery The Flux query string.
+   * @param pageSize Number of records per page.
+   * @returns An array containing all query results.
+   */
+  async fetchAllRecords<T extends Record<string, unknown>>(
+    fluxQuery: string,
+    pageSize: number = 1000
+  ): Promise<Array<QueryResult<T>>> {
+    const results: Array<QueryResult<T>> = []
+    for await (const page of this.paginateQuery<T>({ fluxQuery, pageSize })) {
+      results.push(...page)
+    }
+    console.log('Results: ', {results})
+    return results
+  }
+
+  /**
+ * Writes a trade event to InfluxDB.
+ * @param record The trade event record to write.
+ */
+  async recordTradeEvent(record: BasePoint): Promise<void> {
+    const point = new Point(record._measurement)
+      .timestamp(new Date(record._time))
+      .floatField(record._field, record._value)
+    // Add additional fields dynamically
+    for (const key in record) {
+      if (['_measurement', '_time', '_field', '_value'].includes(key)) continue
+      const value = record[key]
+
+      if (TAGS.includes(key)) {
+        point.tag(key, String(value))
+      } else if (typeof value === 'number') {
+        point.floatField(key, value)
+      } else if (typeof value === 'string') {
+        point.stringField(key, value)
+      } else if (typeof value === 'boolean') {
+        point.booleanField(key, value)
+      }
+    }
+
+    console.log('Writing point: ', point.toLineProtocol())
+
+    this.writeApi.writePoint(point)
+    await this.writeApi.flush()
   }
 }

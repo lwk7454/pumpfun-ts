@@ -1,36 +1,9 @@
-import { Keypair, VersionedTransaction, Connection } from '@solana/web3.js'
-import { decode } from 'npm:base-58'
-
-// For exponential backoff
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, backoffFactor = 2): Promise<Response> {
-  let attempt = 0
-  let delay = 1000 // 1 second base
-  let lastError: unknown = null
-
-  while (attempt < maxRetries) {
-    try {
-      const response = await fetch(url, options)
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} - ${response.statusText}`)
-      }
-      return response
-    } catch (err) {
-      attempt++
-      lastError = err
-      console.warn(`[TradePortalService] fetchWithRetry error on attempt ${attempt}: ${err}. Retrying in ${delay} ms...`)
-      await wait(delay)
-      delay *= backoffFactor
-    }
-  }
-  throw new Error(`[TradePortalService] fetchWithRetry failed after ${maxRetries} attempts. Last error: ${lastError}`)
-}
+import { Keypair, VersionedTransaction, Connection, ParsedTransactionWithMeta } from '@solana/web3.js'
+import bs58 from 'bs58'
+import { TradeAction } from '@/trader/interfaces.ts';
+import { fetchWithRetry } from '@/shared/utils.ts';
 
 export interface TradePortalOptions {
-  dryRun: boolean
   rpcEndpoint: string
   walletSecretKey: string   // Base58 string or other secure format
 }
@@ -39,7 +12,7 @@ export interface TradeRequest {
   publicKey: string
   action: "buy" | "sell"
   mint: string
-  denominatedInSol: boolean
+  denominatedInSol: "true" | "false"
   amount: number
   slippage: number
   priorityFee: number
@@ -49,20 +22,28 @@ export interface TradeRequest {
 export class TradePortalService {
   private connection: Connection | null = null
   private keypair: Keypair | null = null
-  private dryRun: boolean
 
   constructor(private options: TradePortalOptions) {
-    this.dryRun = options.dryRun
-    if (this.dryRun) return
     this.connection = new Connection(this.options.rpcEndpoint, "confirmed")
-    this.keypair = Keypair.fromSecretKey(decode(this.options.walletSecretKey))
+    this.keypair = Keypair.fromSecretKey(bs58.decode(this.options.walletSecretKey))
   }
 
-  async trade(request: TradeRequest): Promise<string> {
-    if (this.dryRun) {
-      return "dry-run"
-    }
+  private normalizeTransaction(request: TradeRequest, tx: ParsedTransactionWithMeta): TradeAction {
+    const solChange = (tx.meta?.postBalances[0] || 0) - (tx.meta?.preBalances[0] || 0)
+    const tokenChange = (tx.meta?.postTokenBalances?.at(0)?.uiTokenAmount.uiAmount || 0) - (tx.meta?.preTokenBalances?.at(0)?.uiTokenAmount.uiAmount || 0)
 
+    return {
+      mint: request.mint,
+      txType: request.action,
+      tokenDelta: tokenChange,
+      solDelta: solChange,
+      newTokenBalance: tx.meta?.postTokenBalances?.at(0)?.uiTokenAmount.uiAmount || 0,
+      marketCapSol: 0,
+      timestamp: Date.now(),
+    }
+  }
+
+  async trade(request: TradeRequest): Promise<TradeAction> {
     const keypair = this.keypair!
     const connection = this.connection!
 
@@ -79,6 +60,7 @@ export class TradePortalService {
     )
 
     const data = await response.arrayBuffer()
+    console.log("[TradePortalService] Transaction data:", data)
     const tx = VersionedTransaction.deserialize(new Uint8Array(data))
     tx.sign([keypair])
 
@@ -107,10 +89,16 @@ export class TradePortalService {
 
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`)
-      }
+      } 
 
-      console.log("[TradePortalService] Transaction confirmed:", signature)
-      return signature
+      console.log("[TradePortalService] Transaction confirmed:", confirmation)
+
+      const txn = await connection.getParsedTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+      })
+
+      console.log("[TradePortalService] Transaction details:", txn)
+      return this.normalizeTransaction(request, txn!)
     } catch (err) {
       throw new Error(`[TradePortalService] Transaction failed. Error: ${err}`)
     }

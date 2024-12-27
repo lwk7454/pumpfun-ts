@@ -1,0 +1,7 @@
+{
+  "deno.codeLens.testArgs": [
+    "--allow-all",
+    "--no-check",
+    "--env-file"
+  ]
+}
