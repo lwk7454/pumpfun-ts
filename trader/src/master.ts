@@ -4,7 +4,7 @@ import { InfluxService, PumpPortalService } from "@/trader/services/index.ts"
 import { DummyStrategy } from "@/trader/strategy/dummy_strategy.ts"
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args"
-import { wait } from "@/shared/utils.ts"
+import { logger, wait } from "@/shared/utils.ts"
 
 export interface MasterConfig {
   maxOpenPositions: number
@@ -60,7 +60,7 @@ export class Master {
     this.isRunning = false
 
     const report = this.generateReport()
-    console.log(`[Master] Final Report: ${report.solDelta} SOL`)
+    logger.info(`[Master] Final Report: ${report.solDelta} SOL`)
   }
 
   private generateReport(): MasterResult {
@@ -77,21 +77,21 @@ export class Master {
     if (this.ws) {
       this.ws.close()
       this.ws = undefined
-      console.log('Socket reset')
+      logger.info('Socket reset')
     } else {
-      console.log('Starting master')
+      logger.info('Starting master')
     }
     this.ws = new WebSocket(`wss://pumpportal.fun/api/data`)
 
     this.ws.onerror = e => {
-      console.error('WS Error', e)
+      logger.error('WS Error', e)
       setTimeout(() => {
         this.runLive()
       }, 5000)
     }
 
     this.ws.onopen = () => {
-      console.log("Connected to market feed.")
+      logger.info("Connected to market feed.")
       this.ws!.send(
         JSON.stringify({
           method: "subscribeNewToken",
@@ -124,25 +124,24 @@ export class Master {
                 keys: Array.from(this.activeWorkers.keys()),
               }),
             )
-            console.log("Subscribed to token trade events for:", mint)
+            logger.info("Subscribed to token trade events for:", mint.substring(0, 4))
           }
 
           this.onEvent(tokenEvent)
         }
       } catch (err) {
-        console.error("Error processing message:", { event, err })
+        logger.error("Error processing message:", { event, err })
       }
     }
   }
 
   private async heartBeat() {
     while (this.isRunning) {
-      console.log("[Master] Heartbeat")
       this.activeWorkers.forEach((worker) => {
         worker.enqueueEvent({ type: "heartbeat" })
       })
 
-      await wait(1000)
+      await wait(1)
     }
   }
 
@@ -184,7 +183,9 @@ export class Master {
 
   public onWorkerComplete(result: WorkerResult) {
     this.workerResults.push(result)
-    console.log(`[Master] Closing Token ${result.mint} Profit: ${result.solDelta} SOL, Remaining Tokens: ${result.tokenDelta}`)
+    if (result.solDelta !== 0) { // Only log if there was a profit/loss
+      logger.info(`[Master] Closing Token ${result.mint.substring(0, 4)}... Profit: ${result.solDelta.toFixed(7)} SOL, Remaining Tokens: ${result.tokenDelta}`)
+    }
     this.closeWorker(result.mint)
   }
 

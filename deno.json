@@ -14,6 +14,8 @@
     "@/watcher/": "./watcher/src/",
     "@/trader/": "./trader/src/",
     "@/": "./",
+    "@deno-library/logger": "jsr:@deno-library/logger@^1.1.7",
+    "@logger": "jsr:@deno-library/logger@^1.1.7",
     "@influxdata/influxdb-client": "npm:@influxdata/influxdb-client@^1.35.0",
     "@influxdata/influxdb-client-apis": "npm:@influxdata/influxdb-client-apis@^1.35.0",
     "@solana/web3.js": "npm:@solana/web3.js@^1.98.0",

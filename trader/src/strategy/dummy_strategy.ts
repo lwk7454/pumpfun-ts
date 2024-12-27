@@ -1,4 +1,5 @@
 import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
+import { logger } from '@/shared/utils.ts';
 
 export class DummyStrategy extends Strategy {
 
@@ -56,7 +57,7 @@ export class DummyStrategy extends Strategy {
       const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)
 
       if (priceDiff < this.LOSS_THRESHOLD || priceDiff > this.PROFIT_THRESHOLD) {
-        console.log(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
+        logger.info(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
         return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
       }
     }
@@ -65,22 +66,20 @@ export class DummyStrategy extends Strategy {
   }
 
   onInit(token: string): void {
-    console.log(`[DummyStrategy] Initialized for ${token}.`)
+    logger.info(`[DummyStrategy] Initialized for ${token.substring(0, 4)}.`)
   }
 
   onClose(token: string): void {
-    console.log(`[DummyStrategy] Closed for ${token}.`)
+    logger.info(`[DummyStrategy] Closed for ${token.substring(0, 4)}.`)
   }
 
   onHeartbeat(): Decision {
-    console.log(`[DummyStrategy] Heartbeat.`)
-
     if (this.hasBought() && this.hasSold()) {
       return { action: "close" }
     } else if (this.hasBought()) {
       const buyEvent = this.actions.find(action => action.txType === "buy")!
       if (Date.now() - buyEvent.timestamp > this.TIMEOUT) {
-        console.log(`[DummyStrategy] Timeout sell`)
+        logger.info(`[DummyStrategy] Timeout sell`)
         return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
       }
     } else {

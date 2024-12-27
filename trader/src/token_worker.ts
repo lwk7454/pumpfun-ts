@@ -1,9 +1,10 @@
 // worker.ts
-import { Decision, StrategyConstructor, TradeAction } from '@/trader/interfaces.ts';
+import { Decision, StrategyConstructor, TradeAction } from '@/trader/interfaces.ts'
 import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
 import { PumpPortalService } from "./services/pump_portal.ts"
-import { Master } from '@/trader/master.ts';
+import { Master } from '@/trader/master.ts'
+import { logger } from '@/shared/utils.ts';
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -133,7 +134,7 @@ export class TokenWorker {
     let solDelta = 0
     let tokenDelta = 0
     this.actions.forEach(action => {
-      // console.log(`[TokenWorker] Token: ${this.tokenMint} Action: ${action.txType} Token: ${action.tokenAmount} Sol: ${action.solAmount} Fee: ${action.feeAmount}`)
+      // logger.info(`[TokenWorker] Token: ${this.tokenMint} Action: ${action.txType} Token: ${action.tokenAmount} Sol: ${action.solAmount} Fee: ${action.feeAmount}`)
       solDelta += (action.txType === "buy" ? -action.solAmount : action.solAmount) - action.feeAmount
       tokenDelta += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
     })
@@ -153,7 +154,7 @@ export class TokenWorker {
       const gasCost = 0.000006 // TODO: get from config
       const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
-      console.log(`[TokenWorker] Dry-run: Simulated BUY for ${this.tokenMint} @ ${lastPrice}`)
+      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${this.tokenMint.substring(0, 4)} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "buy",
@@ -179,7 +180,7 @@ export class TokenWorker {
         pool: "pump",
       })
 
-      console.log(`[TokenWorker] BUY transaction successful: ${result}`)
+      logger.info(`[TokenWorker] BUY transaction successful: ${result}`)
 
       await this.config.influx.recordTradeEvent({
         _measurement: "trade",
@@ -195,7 +196,7 @@ export class TokenWorker {
       })
       return result
     } catch (err) {
-      console.error(`[TokenWorker] Failed to BUY ${this.tokenMint}:`, err)
+      logger.error(`[TokenWorker] Failed to BUY ${this.tokenMint.substring(0, 4)}:`, err)
       return null
     }
   }
@@ -209,7 +210,7 @@ export class TokenWorker {
       const gasCost = 0.000006 // TODO: get from config
       const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
-      console.log(`[TokenWorker] Dry-run: Simulated SELL for ${this.tokenMint} @ ${lastPrice}`)
+      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${this.tokenMint.substring(0, 4)} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "sell",
@@ -235,7 +236,7 @@ export class TokenWorker {
         pool: "pump",
       })
 
-      console.log(`[TokenWorker] SELL transaction successful: ${result}`)
+      logger.info(`[TokenWorker] SELL transaction successful: ${result}`)
 
       await this.config.influx.recordTradeEvent({
         _measurement: "trade",
@@ -251,7 +252,7 @@ export class TokenWorker {
       })
       return result
     } catch (err) {
-      console.error(`[TokenWorker] Failed to SELL ${this.tokenMint}:`, err)
+      logger.error(`[TokenWorker] Failed to SELL ${this.tokenMint.substring(0, 4)}:`, err)
       return null
     }
   }

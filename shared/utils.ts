@@ -1,3 +1,5 @@
+import { Logger } from "@logger"
+
 export function wait(seconds: number) {
   return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
 }
@@ -16,17 +18,19 @@ export async function fetchWithRetry(url: string, options: RequestInit, maxRetri
     try {
       const response = await fetch(url, options)
       if (!response.ok) {
-        console.error({ response: await response.json() })
+        logger.error({ response: await response.json() })
         throw new Error(`HTTP ${response.status} - ${response.statusText}`)
       }
       return response
     } catch (err) {
       attempt++
       lastError = err
-      console.warn(`fetchWithRetry error on attempt ${attempt}: ${err}. Retrying in ${delay} ms...`)
+      logger.warn(`fetchWithRetry error on attempt ${attempt}: ${err}. Retrying in ${delay} ms...`)
       await wait(delay)
       delay *= backoffFactor
     }
   }
   throw new Error(`fetchWithRetry failed after ${maxRetries} attempts. Last error: ${lastError}`)
 }
+
+export const logger = new Logger()

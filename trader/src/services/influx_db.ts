@@ -1,4 +1,5 @@
 import { InfluxDB, QueryApi, Point, WriteApi} from '@influxdata/influxdb-client'
+import { logger } from '@/shared/utils.ts';
 
 // Define a generic interface for query results
 export type QueryResult<T = Record<string, unknown>> ={
@@ -78,7 +79,7 @@ export class InfluxService {
         lastTime = rows.at(-1)!._time
         yield page
       } else {
-        console.log('No more pages: ', { page, pageSize })
+        logger.info('No more pages: ', { page, pageSize })
         hasMore = false
       }
     }
@@ -114,7 +115,7 @@ export class InfluxService {
     for await (const page of this.paginateQuery<T>({ fluxQuery, pageSize })) {
       results.push(...page)
     }
-    console.log('Results: ', {results})
+    logger.info('Results: ', {results})
     return results
   }
 
@@ -141,7 +142,7 @@ export class InfluxService {
       }
     }
 
-    console.log('Writing point: ', point.toLineProtocol())
+    logger.info('Writing point: ', point.toLineProtocol())
 
     this.writeApi.writePoint(point)
     await this.writeApi.flush()

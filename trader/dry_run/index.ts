@@ -1,22 +1,24 @@
-import dotenv from 'npm:dotenv'
 import { FakeTime } from "@std/testing/time"
+
 import { Master } from '@/trader/master.ts'
 import { InfluxService, PumpPortalService } from '@/trader/services/index.ts';
 import { DummyStrategy } from '@/trader/strategy/index.ts';
 import { InfluxDataFeeder } from './data_feeders/influx_feeder.ts';
 import { assert } from '@std/assert';
+import { logger } from '@/shared/utils.ts';
 
-dotenv.config()
 Deno.test('Dry run', async () => {
+  await logger.initFileLogger("./logs")
+  const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-27T00:31:00Z')
+  const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T23:32:00Z')
+  using time = new FakeTime(startDate);
   const dryRun = true
   const RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com'
   const WALLET_SECRET = ''
   const WALLET_PUBLIC_KEY = ''
-  const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-27T03:30:00Z')
-  const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T03:31:00Z')
 
   const influxDataFeeder = new InfluxDataFeeder(startDate, endDate)
-  using time = new FakeTime(startDate);
+  
 
   const influxService = new InfluxService()
   const pumpPortalService = new PumpPortalService({
@@ -53,7 +55,7 @@ Deno.test('Dry run', async () => {
     }
 
   } catch (error) {
-    console.error("Error processing events:", error)
+    logger.error("Error processing events:", error)
   } finally {
     master.close()
   }

@@ -1,7 +1,7 @@
 import { Keypair, VersionedTransaction, Connection, ParsedTransactionWithMeta } from '@solana/web3.js'
 import bs58 from 'bs58'
 import { TradeAction } from '@/trader/interfaces.ts';
-import { fetchWithRetry } from '@/shared/utils.ts';
+import { fetchWithRetry, logger } from '@/shared/utils.ts';
 
 export interface PumpPortalOptions {
   rpcEndpoint: string
@@ -58,7 +58,7 @@ export class PumpPortalService {
     const keypair = this.keypair!
     const connection = this.connection!
 
-    console.log("[PumpPortalService] Attempting to sign and send transaction...")
+    logger.info("[PumpPortalService] Attempting to sign and send transaction...")
 
     // Fetch transaction data with retry
     const response = await fetchWithRetry(
@@ -71,7 +71,7 @@ export class PumpPortalService {
     )
 
     const data = await response.arrayBuffer()
-    console.log("[PumpPortalService] Transaction data:", data)
+    logger.info("[PumpPortalService] Transaction data:", data)
     const tx = VersionedTransaction.deserialize(new Uint8Array(data))
     tx.sign([keypair])
 
@@ -83,7 +83,7 @@ export class PumpPortalService {
         skipPreflight: false,
         preflightCommitment: 'confirmed',
       })
-      console.log("[PumpPortalService] Transaction sent:", signature)
+      logger.info("[PumpPortalService] Transaction sent:", signature)
 
       // Fetch the latest blockhash for confirmation strategy
       const latestBlockhash = await connection.getLatestBlockhash('confirmed')
@@ -102,13 +102,13 @@ export class PumpPortalService {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`)
       } 
 
-      console.log("[PumpPortalService] Transaction confirmed:", confirmation)
+      logger.info("[PumpPortalService] Transaction confirmed:", confirmation)
 
       const txn = await connection.getParsedTransaction(signature, {
         maxSupportedTransactionVersion: 0,
       })
 
-      console.log("[PumpPortalService] Transaction details:", txn)
+      logger.info("[PumpPortalService] Transaction details:", txn)
       return this.normalizeTransaction(request, txn!)
     } catch (err) {
       throw new Error(`[PumpPortalService] Transaction failed. Error: ${err}`)
