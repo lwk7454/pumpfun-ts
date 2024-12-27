@@ -8,8 +8,13 @@
 
 ## Trader
 
+Every run will result in logs in `logs/`
+
 ### Dry Run
 - At monorepo root, run `deno task trader:dry-run`
 - Runner is at `trader/dry_run/index.ts` for config
 - Logs are in `logs/dry-run-<time>/`
 
+### Live mode
+WORK IN PROGRESS
+- run `deno task trader:live`
