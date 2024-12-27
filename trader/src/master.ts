@@ -78,7 +78,7 @@ export class Master {
       )
     }
 
-    this.ws.onmessage = async (event) => {
+    this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
 
@@ -92,6 +92,7 @@ export class Master {
             solAmount,
             marketCapSol,
             traderPublicKey,
+            timestamp: Date.now(),
           }
 
           if (!this.activeWorkers.has(mint)) {
@@ -117,7 +118,7 @@ export class Master {
     while (this.isRunning) {
       console.log("[Master] Heartbeat")
       this.activeWorkers.forEach((worker) => {
-        worker.heartbeat()
+        worker.enqueueEvent({ type: "heartbeat" })
       })
 
       await wait(1000)
@@ -128,7 +129,7 @@ export class Master {
     console.log("[Master] Event:", event)
 
     if (this.activeWorkers.has(event.mint)) {
-      this.activeWorkers.get(event.mint)!.handleMarketCapUpdate(event)
+      this.activeWorkers.get(event.mint)!.enqueueEvent({ type: "marketCapUpdate", event })
     } else {
       this.spawnWorker(event)
     }

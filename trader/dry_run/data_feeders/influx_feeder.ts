@@ -2,6 +2,15 @@ import { InfluxService } from '@/trader/services/index.ts';
 import { BaseDataFeeder } from './base_feeder.ts';
 import { TokenEvent } from '@/trader/interfaces.ts';
 
+type InfluxRecord = {
+  mint: string
+  tx_type: 'buy' | 'sell'
+  token_amount: number
+  sol_amount: number
+  market_cap_sol: number
+  timestamp: number
+}
+
 export class InfluxDataFeeder extends BaseDataFeeder {
   private influxService: InfluxService
 
@@ -11,11 +20,13 @@ export class InfluxDataFeeder extends BaseDataFeeder {
   }
 
   async *nextEvent(): AsyncGenerator<TokenEvent> {
-
-    const recordPages = this.influxService.paginateQuery<TokenEvent>({
+    const recordPages = this.influxService.paginateQuery<InfluxRecord>({
       fluxQuery: `
         |> range(start: ${this.startDate.toISOString()}, stop: ${this.endDate.toISOString()})
         |> filter(fn: (r) => r._measurement == "market_data")
+        |> pivot(rowKey:["_time", "mint"], columnKey: ["_field"], valueColumn: "_value")
+        |> filter(fn: (r) => r.market_cap_sol > 0 and r.tx_type != "create")
+        |> sort(columns: ["_time"], desc: false)
       `,
       pageSize: 100,
     })
@@ -24,7 +35,10 @@ export class InfluxDataFeeder extends BaseDataFeeder {
       for (const record of page) {
         yield {
           mint: record.mint,
-          marketCapSol: record.marketCapSol,
+          txType: record.tx_type,
+          tokenAmount: record.token_amount,
+          solAmount: record.sol_amount,
+          marketCapSol: record.market_cap_sol,
           timestamp: record.timestamp,
         }
       }

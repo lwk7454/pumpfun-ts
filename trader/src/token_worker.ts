@@ -16,6 +16,13 @@ export interface WorkerConfig {
   dryRun: boolean
 }
 
+export type WorkerEvent = {
+  type: "marketCapUpdate"
+  event: TokenEvent
+} | {
+  type: "heartbeat"
+}
+
 export class TokenWorker {
   private strategy: Strategy
   private tokenMint: string
@@ -25,17 +32,43 @@ export class TokenWorker {
   // Worker actions history triggered by strategy
   private actions: TradeAction[] = []
 
+  // Queue related properties
+  private eventQueue: WorkerEvent[] = [];
+  private isProcessing = false;
+
   constructor(private config: WorkerConfig, private onComplete: () => void) {
     this.strategy = new config.strategy(this.events, this.actions, this.config.baseBid)
     this.tokenMint = this.config.initEvent.mint
-    this.events.push(this.config.initEvent)
+    this.handleMarketCapUpdate(this.config.initEvent)
   }
 
-  public heartbeat(): void {
+  private async heartbeat(): Promise<void> {
     if (this.isComplete) return
 
     const decision = this.strategy.onHeartbeat()
-    this.handleDecision(decision)
+    return await this.handleDecision(decision)
+  }
+
+  public enqueueEvent(event: WorkerEvent): void {
+    this.eventQueue.push(event)
+    if (!this.isProcessing) {
+      this.processQueue()
+    }
+  }
+
+  private async processQueue(): Promise<void> {
+    this.isProcessing = true
+
+    while (this.eventQueue.length > 0 && !this.isComplete) {
+      const event = this.eventQueue.shift()!
+      if (event.type === "marketCapUpdate") {
+        await this.handleMarketCapUpdate(event.event)
+      } else if (event.type === "heartbeat") {
+        await this.heartbeat()
+      }
+    }
+
+    this.isProcessing = false
   }
 
   private mapActionToEvent(action: TradeAction): TokenEvent {
@@ -45,6 +78,7 @@ export class TokenWorker {
       tokenAmount: Math.abs(action.tokenDelta),
       solAmount: Math.abs(action.solDelta),
       marketCapSol: action.marketCapSol,
+      timestamp: action.timestamp,
     }
   }
 

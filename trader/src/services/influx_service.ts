@@ -39,11 +39,11 @@ export class InfluxService {
   private writeApi: WriteApi
   private bucket: string
 
-  constructor() {
+  constructor(bucket?: string) {
     const url = Deno.env.get("INFLUX_URL") || "http://localhost:8086"
     const token = Deno.env.get("INFLUX_TOKEN")
     const org = Deno.env.get("INFLUX_ORG")
-    const bucket = Deno.env.get("INFLUX_BUCKET")
+    bucket = bucket || Deno.env.get("INFLUX_BUCKET")
 
     if (!url || !token || !org || !bucket) {
       throw new Error("InfluxDB credentials are not set")

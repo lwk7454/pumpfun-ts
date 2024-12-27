@@ -4,7 +4,7 @@ export type Decision = {
 }
 
 export abstract class Strategy {
-  constructor(private events: TokenEvent[], private actions: TradeAction[], private baseBid: number) {
+  constructor(protected events: TokenEvent[], protected actions: TradeAction[], protected baseBid: number) {
 
   }
 
@@ -41,6 +41,7 @@ export type TokenEvent = Pick<
   "mint" | "txType" | "tokenAmount" | "solAmount" | "marketCapSol"
 > & {
   traderPublicKey?: string
+  timestamp: number
 }
 
 // action record from the decision of a strategy
