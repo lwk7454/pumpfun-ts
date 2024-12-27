@@ -8,9 +8,9 @@ import { assert } from '@std/assert';
 import { logger } from '@/shared/utils.ts';
 
 Deno.test('Dry run', async () => {
-  await logger.initFileLogger("./logs")
-  const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-27T00:31:00Z')
-  const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T23:32:00Z')
+  await logger.initFileLogger(`./logs/dry-run-${new Date().toISOString()}`)
+  const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-27T03:30:00Z')
+  const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T03:32:00Z')
   using time = new FakeTime(startDate);
   const dryRun = true
   const RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com'

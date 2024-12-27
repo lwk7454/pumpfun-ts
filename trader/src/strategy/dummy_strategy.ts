@@ -47,8 +47,10 @@ export class DummyStrategy extends Strategy {
     if (!this.hasBought()) {
       const firstEvent = this.events[0]!
       const lastEvent = this.events.at(-1)!
+      const priceDiff = this.getPrice(lastEvent) / this.getPrice(firstEvent)
 
-      if (this.getPrice(lastEvent) / this.getPrice(firstEvent) > this.BUY_THRESHOLD) {
+      if (priceDiff > this.BUY_THRESHOLD) {
+        logger.info(`[DummyStrategy] Buying token, ratio: ${priceDiff}`)
         return { action: "buy", amount: this.baseBid }
       }
     } else if (!this.hasSold()) {
@@ -78,7 +80,8 @@ export class DummyStrategy extends Strategy {
       return { action: "close" }
     } else if (this.hasBought()) {
       const buyEvent = this.actions.find(action => action.txType === "buy")!
-      if (Date.now() - buyEvent.timestamp > this.TIMEOUT) {
+      const lastEvent = this.events.at(-1)!
+      if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
         logger.info(`[DummyStrategy] Timeout sell`)
         return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
       }

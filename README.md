@@ -1,0 +1,15 @@
+# Pump.fun Typescript Monorepo
+
+## Dev Setup
+- Install Deno >= 2.0.0
+- Copy `.env.example` to `.env` and fill in the values
+- Run `deno install --allow-script`
+- Requires InfluxDB running
+
+## Trader
+
+### Dry Run
+- At monorepo root, run `deno task trader:dry-run`
+- Runner is at `trader/dry_run/index.ts` for config
+- Logs are in `logs/dry-run-<time>/`
+

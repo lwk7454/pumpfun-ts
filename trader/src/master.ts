@@ -31,11 +31,13 @@ export type MasterResult = {
  */
 export class Master {
   private activeWorkers: Map<string, TokenWorker> = new Map();
+  private subscribedTokens: Set<string> = new Set()
   private isRunning = false;
   private ws?: WebSocket
   private workerResults: WorkerResult[] = []
   private closedTokens: Set<string> = new Set()
   private openPositions: Set<TokenWorker> = new Set()
+  private lastReportTime: number = Date.now()
 
   constructor(private config: MasterConfig) { }
 
@@ -67,8 +69,10 @@ export class Master {
     let solDelta = 0
     let tokenDelta = 0
     this.workerResults.forEach(result => {
-      solDelta += result.solDelta
-      tokenDelta += result.tokenDelta
+      if (!isNaN(result.solDelta) && !isNaN(result.tokenDelta)) {
+        solDelta += result.solDelta
+        tokenDelta += result.tokenDelta
+      }
     })
     return { solDelta, tokenDelta }
   }
@@ -103,6 +107,19 @@ export class Master {
       try {
         const data = JSON.parse(event.data)
 
+        if (data.txType === 'create') {
+          const event = data as TradeEvent
+          const { mint } = event
+          this.subscribedTokens.add(mint)
+          this.ws!.send(
+            JSON.stringify({
+              method: "subscribeTokenTrade",
+              keys: Array.from(this.subscribedTokens),
+            }),
+          )
+          // logger.info("Subscribed to token trade events for:", mint.substring(0, 4))
+        }
+
         if (['buy', 'sell'].includes(data.txType)) {
           const event = data as TradeEvent
           const { mint, marketCapSol, txType, tokenAmount, solAmount, traderPublicKey } = event
@@ -114,17 +131,6 @@ export class Master {
             marketCapSol,
             traderPublicKey,
             timestamp: Date.now(),
-          }
-
-          if (!this.activeWorkers.has(mint)) {
-            // Subscribe to trade events for the new token
-            this.ws!.send(
-              JSON.stringify({
-                method: "subscribeTokenTrade",
-                keys: Array.from(this.activeWorkers.keys()),
-              }),
-            )
-            logger.info("Subscribed to token trade events for:", mint.substring(0, 4))
           }
 
           this.onEvent(tokenEvent)
@@ -140,6 +146,12 @@ export class Master {
       this.activeWorkers.forEach((worker) => {
         worker.enqueueEvent({ type: "heartbeat" })
       })
+
+      if (Date.now() - this.lastReportTime > 1000 * 60 * 5) {
+        const report = this.generateReport()
+        logger.info(`[Master] Report profit: ${report.solDelta} SOL, Subscribed tokens: ${this.subscribedTokens.size}`)
+        this.lastReportTime = Date.now()
+      }
 
       await wait(1)
     }
@@ -182,8 +194,8 @@ export class Master {
   }
 
   public onWorkerComplete(result: WorkerResult) {
-    this.workerResults.push(result)
     if (result.solDelta !== 0) { // Only log if there was a profit/loss
+      this.workerResults.push(result)
       logger.info(`[Master] Closing Token ${result.mint.substring(0, 4)}... Profit: ${result.solDelta.toFixed(7)} SOL, Remaining Tokens: ${result.tokenDelta}`)
     }
     this.closeWorker(result.mint)
@@ -203,6 +215,7 @@ export class Master {
 }
 
 if (import.meta.main) {
+  logger.initFileLogger(`./logs/live-${new Date().toISOString()}/`)
   // Define the expected command-line arguments
   const args = parseArgs(Deno.args, {
     boolean: ["dryRun"],
@@ -210,7 +223,7 @@ if (import.meta.main) {
     default: {
       dryRun: false,
       maxOpenPositions: "10",
-      baseBid: "0.1",
+      baseBid: "0.001",
     },
     alias: {
       dryRun: ["dry"],
@@ -223,14 +236,9 @@ if (import.meta.main) {
   const maxOpenPositions: number = Number(args.maxOpenPositions)
   const baseBid: number = Number(args.baseBid)
 
-  // TODO
-  if (!dryRun) {
-    throw new Error("Live mode not implemented yet")
-  }
-
   const RPC_ENDPOINT = Deno.env.get("RPC_ENDPOINT") || "https://api.mainnet-beta.solana.com"
-  const WALLET_SECRET = Deno.env.get("WALLET_SECRET_KEY") || "YOUR_BASE58_PRIVATE_KEY"
-  const WALLET_PUBLIC_KEY = Deno.env.get("WALLET_PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY"
+  const WALLET_SECRET = Deno.env.get("PRIVATE_KEY") || "YOUR_BASE58_PRIVATE_KEY"
+  const WALLET_PUBLIC_KEY = Deno.env.get("PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY"
 
   const influxService = new InfluxService()
   const pumpPortalService = new PumpPortalService({
@@ -246,7 +254,7 @@ if (import.meta.main) {
     pumpPortal: pumpPortalService,
     defaultStrategy: DummyStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 10,
+    defaultSlippage: 20,
     priorityFee: 0.00001,
   })
 

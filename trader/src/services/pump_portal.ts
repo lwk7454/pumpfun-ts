@@ -49,7 +49,7 @@ export class PumpPortalService {
       feeAmount: Math.abs(solAmount - solChange),
       tradePrice: solAmount / tokenChange,
       newTokenBalance: tx.meta?.postTokenBalances?.at(0)?.uiTokenAmount.uiAmount || 0,
-      marketCapSol: 0,
+      marketCapSol: 0, // TODO
       timestamp: Date.now(),
     }
   }
@@ -58,7 +58,7 @@ export class PumpPortalService {
     const keypair = this.keypair!
     const connection = this.connection!
 
-    logger.info("[PumpPortalService] Attempting to sign and send transaction...")
+    logger.info("[PumpPortalService] Attempting to sign and send transaction", {request})
 
     // Fetch transaction data with retry
     const response = await fetchWithRetry(
@@ -71,7 +71,6 @@ export class PumpPortalService {
     )
 
     const data = await response.arrayBuffer()
-    logger.info("[PumpPortalService] Transaction data:", data)
     const tx = VersionedTransaction.deserialize(new Uint8Array(data))
     tx.sign([keypair])
 
@@ -79,10 +78,7 @@ export class PumpPortalService {
 
     try {
       // Send the transaction
-      signature = await connection.sendTransaction(tx, {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed',
-      })
+      signature = await connection.sendTransaction(tx)
       logger.info("[PumpPortalService] Transaction sent:", signature)
 
       // Fetch the latest blockhash for confirmation strategy
@@ -102,13 +98,12 @@ export class PumpPortalService {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`)
       } 
 
-      logger.info("[PumpPortalService] Transaction confirmed:", confirmation)
+      logger.info("[PumpPortalService] Transaction confirmed:", signature)
 
       const txn = await connection.getParsedTransaction(signature, {
         maxSupportedTransactionVersion: 0,
       })
 
-      logger.info("[PumpPortalService] Transaction details:", txn)
       return this.normalizeTransaction(request, txn!)
     } catch (err) {
       throw new Error(`[PumpPortalService] Transaction failed. Error: ${err}`)
