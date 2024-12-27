@@ -1,5 +1,3 @@
-// strategy/dummy_strategy.ts
-
 import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
 
 export class DummyStrategy extends Strategy {

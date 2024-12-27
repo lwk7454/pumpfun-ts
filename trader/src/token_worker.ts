@@ -3,6 +3,7 @@ import { Decision, StrategyConstructor, TradeAction } from '@/trader/interfaces.
 import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
 import { PumpPortalService } from "./services/pump_portal.ts"
+import { Master } from '@/trader/master.ts';
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -39,13 +40,24 @@ export class TokenWorker {
   private actions: TradeAction[] = []
 
   // Queue related properties
-  private eventQueue: WorkerEvent[] = [];
-  private isProcessing = false;
+  private eventQueue: WorkerEvent[] = []
+  private isProcessing = false
 
-  constructor(private config: WorkerConfig, private onComplete: (result: WorkerResult) => void) {
+  public boughtTokens: number = 0
+
+  constructor(private config: WorkerConfig, private master: Master) {
     this.strategy = new config.strategy(this.events, this.actions, this.config.baseBid)
     this.tokenMint = this.config.initEvent.mint
     this.handleMarketCapUpdate(this.config.initEvent)
+  }
+
+  private updateBoughtTokens(action: TradeAction): void {
+    this.boughtTokens += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
+    if (this.boughtTokens > 0) {
+      this.master.openPosition(this)
+    } else {
+      this.master.closePosition(this)
+    }
   }
 
   private async heartbeat(): Promise<void> {
@@ -101,18 +113,19 @@ export class TokenWorker {
   private async handleDecision(decision: Decision): Promise<void> {
     let result = null
     const { action, amount } = decision
-    if (action === "buy") {
+    if (action === "buy" && this.master.allowBuy()) {
       result = await this.buyToken(amount!)
     } else if (action === "sell") {
       result = await this.sellToken(amount!)
     } else if (action === "close") {
       this.isComplete = true
-      this.onComplete(this.generateReport())
+      this.master.onWorkerComplete(this.generateReport())
     }
 
     if (result) {
       this.events.push(this.mapActionToEvent(result))
       this.actions.push(result)
+      this.updateBoughtTokens(result)
     }
   }
 

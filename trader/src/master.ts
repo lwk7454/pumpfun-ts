@@ -3,7 +3,7 @@ import { StrategyConstructor, TokenEvent, TradeEvent } from "@/trader/interfaces
 import { InfluxService, PumpPortalService } from "@/trader/services/index.ts"
 import { DummyStrategy } from "@/trader/strategy/dummy_strategy.ts"
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
-import { parseArgs } from "jsr:@std/cli/parse-args";
+import { parseArgs } from "jsr:@std/cli/parse-args"
 import { wait } from "@/shared/utils.ts"
 
 export interface MasterConfig {
@@ -32,9 +32,10 @@ export type MasterResult = {
 export class Master {
   private activeWorkers: Map<string, TokenWorker> = new Map();
   private isRunning = false;
-  private ws?: WebSocket;
+  private ws?: WebSocket
   private workerResults: WorkerResult[] = []
   private closedTokens: Set<string> = new Set()
+  private openPositions: Set<TokenWorker> = new Set()
 
   constructor(private config: MasterConfig) { }
 
@@ -50,7 +51,7 @@ export class Master {
   }
 
   public close(): void {
-    if(this.ws) {
+    if (this.ws) {
       this.ws.close()
     }
     Array.from(this.activeWorkers.keys()).forEach((token) => {
@@ -161,10 +162,10 @@ export class Master {
   private spawnWorker(event: TokenEvent): TokenWorker {
     const { mint } = event
     const {
-       defaultStrategy, walletPublicKey, defaultSlippage, 
-       priorityFee, influxService, pumpPortal, dryRun, baseBid
+      defaultStrategy, walletPublicKey, defaultSlippage,
+      priorityFee, influxService, pumpPortal, dryRun, baseBid
     } = this.config
-    
+
     const worker = new TokenWorker({
       initEvent: event,
       strategy: defaultStrategy,
@@ -175,14 +176,28 @@ export class Master {
       influx: influxService,
       pumpPortal,
       dryRun,
-    }, (result) => {
-      this.workerResults.push(result)
-      console.log(`[Master] Closing Token ${mint} Profit: ${result.solDelta} SOL, Remaining Tokens: ${result.tokenDelta}`)
-      this.closeWorker(mint)
-    })
+    }, this)
 
     this.activeWorkers.set(mint, worker)
     return worker
+  }
+
+  public onWorkerComplete(result: WorkerResult) {
+    this.workerResults.push(result)
+    console.log(`[Master] Closing Token ${result.mint} Profit: ${result.solDelta} SOL, Remaining Tokens: ${result.tokenDelta}`)
+    this.closeWorker(result.mint)
+  }
+
+  public openPosition(worker: TokenWorker) {
+    this.openPositions.add(worker)
+  }
+
+  public closePosition(worker: TokenWorker) {
+    this.openPositions.delete(worker)
+  }
+
+  public allowBuy(): boolean {
+    return this.openPositions.size < this.config.maxOpenPositions
   }
 }
 
@@ -201,26 +216,26 @@ if (import.meta.main) {
       maxOpenPositions: ["concurrency"],
       baseBid: ["bid"],
     },
-  });
+  })
 
-  const dryRun: boolean = args.dryRun;
-  const maxOpenPositions: number = Number(args.maxOpenPositions);
-  const baseBid: number = Number(args.baseBid);
+  const dryRun: boolean = args.dryRun
+  const maxOpenPositions: number = Number(args.maxOpenPositions)
+  const baseBid: number = Number(args.baseBid)
 
   // TODO
   if (!dryRun) {
     throw new Error("Live mode not implemented yet")
   }
 
-  const RPC_ENDPOINT = Deno.env.get("RPC_ENDPOINT") || "https://api.mainnet-beta.solana.com";
-  const WALLET_SECRET = Deno.env.get("WALLET_SECRET_KEY") || "YOUR_BASE58_PRIVATE_KEY";
-  const WALLET_PUBLIC_KEY = Deno.env.get("WALLET_PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY";
+  const RPC_ENDPOINT = Deno.env.get("RPC_ENDPOINT") || "https://api.mainnet-beta.solana.com"
+  const WALLET_SECRET = Deno.env.get("WALLET_SECRET_KEY") || "YOUR_BASE58_PRIVATE_KEY"
+  const WALLET_PUBLIC_KEY = Deno.env.get("WALLET_PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY"
 
-  const influxService = new InfluxService();
+  const influxService = new InfluxService()
   const pumpPortalService = new PumpPortalService({
     rpcEndpoint: RPC_ENDPOINT,
     walletSecretKey: WALLET_SECRET,
-  });
+  })
 
   const master = new Master({
     maxOpenPositions,
@@ -232,7 +247,7 @@ if (import.meta.main) {
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
     priorityFee: 0.00001,
-  });
+  })
 
-  master.run();
+  master.run()
 }

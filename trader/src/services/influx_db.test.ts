@@ -101,7 +101,7 @@ Deno.test("InfluxService", async (t) => {
     `
 
     // Fetch Records to Verify Write Operation
-    const records = await influxService.fetchAllRecords<any>(fluxQuery, 10)
+    const records = await influxService.fetchAllRecords<Record<string, unknown>>(fluxQuery, 10)
     assertEquals(records.length, 1, "There should be exactly one record written.")
     assertEquals(records[0]._value, 100, "The _value field should match the written value.")
     assertEquals(records[0].foo, "bar", "Additional fields should match.")
