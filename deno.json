@@ -1,6 +1,8 @@
 {
   "nodeModulesDir": "auto",
-  "tasks": {},
+  "tasks": {
+    "trader:dry-run": "deno test --allow-all --no-check --env-file ./trader/dry_run/index.ts"
+  },
   "compilerOptions": {
     "lib": [
       "deno.ns",

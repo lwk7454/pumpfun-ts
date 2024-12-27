@@ -16,8 +16,6 @@ export type QueryResult<T = Record<string, unknown>> ={
 export type BasePoint = Record<string, unknown> & {
   _measurement: string
   _time: string
-  _field: string
-  _value: number
 }
 
 // Pagination options interface
@@ -71,8 +69,6 @@ export class InfluxService {
         paginatedQuery += ` |> filter(fn: (r) => r._time > ${lastTime})`
       }
       paginatedQuery += ` |> limit(n: ${pageSize})`
-
-      console.log('Paginated Query: ', paginatedQuery)
 
       const page: Array<QueryResult<T>> = []
       const rows = await this.queryApi.collectRows<QueryResult<T>>(paginatedQuery)
@@ -129,10 +125,9 @@ export class InfluxService {
   async recordTradeEvent(record: BasePoint): Promise<void> {
     const point = new Point(record._measurement)
       .timestamp(new Date(record._time))
-      .floatField(record._field, record._value)
     // Add additional fields dynamically
     for (const key in record) {
-      if (['_measurement', '_time', '_field', '_value'].includes(key)) continue
+      if (['_measurement', '_time'].includes(key)) continue
       const value = record[key]
 
       if (TAGS.includes(key)) {

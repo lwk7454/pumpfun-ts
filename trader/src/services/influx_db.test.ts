@@ -1,6 +1,6 @@
 import { InfluxDB } from '@influxdata/influxdb-client'
 import { OrgsAPI, BucketsAPI, DeleteAPI } from '@influxdata/influxdb-client-apis'
-import { InfluxService, BasePoint } from './influx_service.ts'
+import { InfluxService, BasePoint } from './influx_db.ts'
 import { assertEquals, assertNotEquals } from "@std/assert"
 import { QueryResult } from '@/trader/services/index.ts';
 

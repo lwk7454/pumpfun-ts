@@ -49,7 +49,9 @@ export type TradeAction = Pick<
   TradeEvent,
   "mint" | "txType" | "newTokenBalance" | "marketCapSol"
 > & {
+  tradePrice: number
   timestamp: number
-  tokenDelta: number
-  solDelta: number
+  tokenAmount: number
+  solAmount: number
+  feeAmount: number
 }

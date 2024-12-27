@@ -26,9 +26,10 @@ export class InfluxDataFeeder extends BaseDataFeeder {
         |> filter(fn: (r) => r._measurement == "market_data")
         |> pivot(rowKey:["_time", "mint"], columnKey: ["_field"], valueColumn: "_value")
         |> filter(fn: (r) => r.market_cap_sol > 0 and r.tx_type != "create")
+        |> group()
         |> sort(columns: ["_time"], desc: false)
       `,
-      pageSize: 100,
+      pageSize: 10000,
     })
 
     for await (const page of recordPages) {
@@ -39,7 +40,7 @@ export class InfluxDataFeeder extends BaseDataFeeder {
           tokenAmount: record.token_amount,
           solAmount: record.sol_amount,
           marketCapSol: record.market_cap_sol,
-          timestamp: record.timestamp,
+          timestamp: new Date(record._time).getTime(),
         }
       }
     }

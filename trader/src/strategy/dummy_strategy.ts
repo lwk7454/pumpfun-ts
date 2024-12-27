@@ -7,7 +7,7 @@ export class DummyStrategy extends Strategy {
   LOSS_THRESHOLD = 0.9
   BUY_THRESHOLD = 1.1
   PROFIT_THRESHOLD = 1.1
-  TIMEOUT = 1000 * 60
+  TIMEOUT = 1000 * 30
 
   private isBought: boolean = false
   private isSold: boolean = false
@@ -19,10 +19,10 @@ export class DummyStrategy extends Strategy {
   private getPrice(event: TokenEvent | TradeAction) {
     if ('tokenAmount' in event) {
       const e = event as TokenEvent
-      return e.tokenAmount / e.solAmount
+      return e.solAmount / e.tokenAmount
     } else {
       const e = event as TradeAction
-      return Math.abs(e.tokenDelta) / Math.abs(e.solDelta)
+      return e.tradePrice
     }
   }
 
@@ -58,7 +58,8 @@ export class DummyStrategy extends Strategy {
       const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)
 
       if (priceDiff < this.LOSS_THRESHOLD || priceDiff > this.PROFIT_THRESHOLD) {
-        return { action: "sell", amount: Math.abs(buyEvent.tokenDelta) }
+        console.log(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
+        return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
       }
     }
 
@@ -81,7 +82,8 @@ export class DummyStrategy extends Strategy {
     } else if (this.hasBought()) {
       const buyEvent = this.actions.find(action => action.txType === "buy")!
       if (Date.now() - buyEvent.timestamp > this.TIMEOUT) {
-        return { action: 'sell', amount: Math.abs(buyEvent.tokenDelta) }
+        console.log(`[DummyStrategy] Timeout sell`)
+        return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
       }
     } else {
       const firstEvent = this.events.at(0)!

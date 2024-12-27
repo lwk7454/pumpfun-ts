@@ -1,8 +1,8 @@
 // worker.ts
 import { Decision, StrategyConstructor, TradeAction } from '@/trader/interfaces.ts';
 import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
-import { InfluxService } from "@/trader/services/influx_service.ts"
-import { TradePortalService } from "@/trader/services/trade_portal.ts"
+import { InfluxService } from "./services/influx_db.ts"
+import { PumpPortalService } from "./services/pump_portal.ts"
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -11,8 +11,8 @@ export interface WorkerConfig {
   traderAddress: string   // Public key of your wallet
   defaultSlippage: number
   priorityFee: number
-  influx: InfluxService
-  tradePortal: TradePortalService
+  influx: InfluxService // trade bucket, not market bucket
+  pumpPortal: PumpPortalService
   dryRun: boolean
 }
 
@@ -21,6 +21,12 @@ export type WorkerEvent = {
   event: TokenEvent
 } | {
   type: "heartbeat"
+}
+
+export type WorkerResult = {
+  mint: string
+  solDelta: number
+  tokenDelta: number
 }
 
 export class TokenWorker {
@@ -36,7 +42,7 @@ export class TokenWorker {
   private eventQueue: WorkerEvent[] = [];
   private isProcessing = false;
 
-  constructor(private config: WorkerConfig, private onComplete: () => void) {
+  constructor(private config: WorkerConfig, private onComplete: (result: WorkerResult) => void) {
     this.strategy = new config.strategy(this.events, this.actions, this.config.baseBid)
     this.tokenMint = this.config.initEvent.mint
     this.handleMarketCapUpdate(this.config.initEvent)
@@ -75,8 +81,8 @@ export class TokenWorker {
     return {
       mint: action.mint,
       txType: action.txType,
-      tokenAmount: Math.abs(action.tokenDelta),
-      solAmount: Math.abs(action.solDelta),
+      tokenAmount: action.tokenAmount,
+      solAmount: action.solAmount,
       marketCapSol: action.marketCapSol,
       timestamp: action.timestamp,
     }
@@ -100,7 +106,8 @@ export class TokenWorker {
     } else if (action === "sell") {
       result = await this.sellToken(amount!)
     } else if (action === "close") {
-      this.onComplete()
+      this.isComplete = true
+      this.onComplete(this.generateReport())
     }
 
     if (result) {
@@ -109,20 +116,38 @@ export class TokenWorker {
     }
   }
 
+  private generateReport(): WorkerResult {
+    let solDelta = 0
+    let tokenDelta = 0
+    this.actions.forEach(action => {
+      // console.log(`[TokenWorker] Token: ${this.tokenMint} Action: ${action.txType} Token: ${action.tokenAmount} Sol: ${action.solAmount} Fee: ${action.feeAmount}`)
+      solDelta += (action.txType === "buy" ? -action.solAmount : action.solAmount) - action.feeAmount
+      tokenDelta += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
+    })
+
+    return {
+      mint: this.tokenMint,
+      solDelta,
+      tokenDelta,
+    }
+  }
+
   private async buyToken(solAmount: number): Promise<TradeAction | null> {
     if (this.config.dryRun) {
-      console.log(`[TokenWorker] Dry-run: Simulated BUY for ${this.tokenMint}`)
 
       const lastEvent = this.events.at(-1)!
-      const price = lastEvent.solAmount / lastEvent.tokenAmount
+      const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const gasCost = 0.000006 // TODO: get from config
-      const fees = lastEvent.solAmount * 0.015 + this.config.priorityFee + gasCost
+      const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
+      console.log(`[TokenWorker] Dry-run: Simulated BUY for ${this.tokenMint} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "buy",
-        tokenDelta: solAmount / price,
-        solDelta: -1 * solAmount - fees,
+        tokenAmount: solAmount / lastPrice,
+        solAmount,
+        feeAmount: fees,
+        tradePrice: lastPrice,
         newTokenBalance: 0, // TODO
         marketCapSol: 0, // TODO
         timestamp: Date.now(),
@@ -130,7 +155,7 @@ export class TokenWorker {
     }
 
     try {
-      const result = await this.config.tradePortal.trade({
+      const result = await this.config.pumpPortal.trade({
         publicKey: this.config.traderAddress,
         action: "buy",
         mint: this.tokenMint,
@@ -146,12 +171,13 @@ export class TokenWorker {
       await this.config.influx.recordTradeEvent({
         _measurement: "trade",
         _time: new Date().toISOString(),
-        _field: "solDelta",
-        _value: solAmount,
         token: this.tokenMint,
         strategy: this.config.strategy.constructor.name,
         action: "buy",
-        tokenDelta: result.tokenDelta,
+        tokenAmount: result.tokenAmount,
+        solAmount: result.solAmount,
+        feeAmount: result.feeAmount,
+        tradePrice: result.tradePrice,
         timestamp: Date.now(),
       })
       return result
@@ -163,18 +189,21 @@ export class TokenWorker {
 
   private async sellToken(tokenAmount: number): Promise<TradeAction | null> {
     if (this.config.dryRun) {
-      console.log(`[TokenWorker] Dry-run: Simulated SELL for ${this.tokenMint}`)
 
       const lastEvent = this.events.at(-1)!
-      const price = lastEvent.solAmount / lastEvent.tokenAmount
+      const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
+      const solAmount = tokenAmount * lastPrice
       const gasCost = 0.000006 // TODO: get from config
-      const fees = lastEvent.solAmount * 0.015 + this.config.priorityFee + gasCost
+      const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
+      console.log(`[TokenWorker] Dry-run: Simulated SELL for ${this.tokenMint} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "sell",
-        tokenDelta: -1 * tokenAmount,
-        solDelta: tokenAmount * price - fees,
+        tokenAmount,
+        solAmount,
+        feeAmount: fees,
+        tradePrice: lastPrice,
         newTokenBalance: 0, // TODO
         marketCapSol: 0, // TODO
         timestamp: Date.now(),
@@ -182,7 +211,7 @@ export class TokenWorker {
     }
 
     try {
-      const result = await this.config.tradePortal.trade({
+      const result = await this.config.pumpPortal.trade({
         publicKey: this.config.traderAddress,
         action: "sell",
         mint: this.tokenMint,
@@ -198,12 +227,13 @@ export class TokenWorker {
       await this.config.influx.recordTradeEvent({
         _measurement: "trade",
         _time: new Date().toISOString(),
-        _field: "solDelta",
-        _value: result.solDelta,
         token: this.tokenMint,
         strategy: this.config.strategy.constructor.name,
         action: "sell",
-        tokenDelta: result.tokenDelta,
+        tokenAmount: result.tokenAmount,
+        solAmount: result.solAmount,
+        feeAmount: result.feeAmount,
+        tradePrice: result.tradePrice,
         timestamp: Date.now(),
       })
       return result

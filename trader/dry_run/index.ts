@@ -1,35 +1,35 @@
 import dotenv from 'npm:dotenv'
 import { FakeTime } from "@std/testing/time"
 import { Master } from '@/trader/master.ts'
-import { InfluxService, TradePortalService } from '@/trader/services/index.ts';
+import { InfluxService, PumpPortalService } from '@/trader/services/index.ts';
 import { DummyStrategy } from '@/trader/strategy/index.ts';
 import { InfluxDataFeeder } from './data_feeders/influx_feeder.ts';
+import { assert } from '@std/assert';
 
 dotenv.config()
-
-async function main() {
+Deno.test('Dry run', async () => {
   const dryRun = true
-  const RPC_ENDPOINT = ''
+  const RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com'
   const WALLET_SECRET = ''
   const WALLET_PUBLIC_KEY = ''
-  const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-01')
-  const endDate = new Date(Deno.env.get("END_DATE") || '2025-12-01')
+  const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-27T03:30:00Z')
+  const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T03:31:00Z')
 
   const influxDataFeeder = new InfluxDataFeeder(startDate, endDate)
   using time = new FakeTime(startDate);
 
   const influxService = new InfluxService()
-  const tradePortalService = new TradePortalService({
+  const pumpPortalService = new PumpPortalService({
     rpcEndpoint: RPC_ENDPOINT,
     walletSecretKey: WALLET_SECRET,
-  })
+  }, true)
 
   const master = new Master({
     maxOpenPositions: 10,
     baseBid: 0.01,
     dryRun,
     influxService,
-    tradePortal: tradePortalService,
+    pumpPortal: pumpPortalService,
     defaultStrategy: DummyStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
@@ -41,8 +41,7 @@ async function main() {
   try {
     for await (const event of influxDataFeeder.nextEvent()) {
       // Advance the simulated time to the event's timestamp
-      const eventTime = new Date(event.timestamp).getTime()
-      while (eventTime > time.now) {
+      while (event.timestamp > time.now) {
         time.tick(100)
       }
 
@@ -57,8 +56,7 @@ async function main() {
     console.error("Error processing events:", error)
   } finally {
     master.close()
-    time.restore()
   }
-}
 
-await main()
+  assert(true)
+})

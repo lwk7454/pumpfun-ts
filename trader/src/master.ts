@@ -1,9 +1,8 @@
 // master.ts
 import { StrategyConstructor, TokenEvent, TradeEvent } from "@/trader/interfaces.ts"
-import { InfluxService } from "@/trader/services/influx_service.ts"
-import { TradePortalService } from "@/trader/services/trade_portal.ts"
+import { InfluxService, PumpPortalService } from "@/trader/services/index.ts"
 import { DummyStrategy } from "@/trader/strategy/dummy_strategy.ts"
-import { TokenWorker } from "@/trader/token_worker.ts"
+import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args";
 import { wait } from "@/shared/utils.ts"
 
@@ -12,11 +11,16 @@ export interface MasterConfig {
   baseBid: number
   dryRun: boolean
   influxService: InfluxService
-  tradePortal: TradePortalService
+  pumpPortal: PumpPortalService
   defaultStrategy: StrategyConstructor
   walletPublicKey: string
   defaultSlippage: number
   priorityFee: number
+}
+
+export type MasterResult = {
+  solDelta: number
+  tokenDelta: number
 }
 
 /**
@@ -29,6 +33,9 @@ export class Master {
   private activeWorkers: Map<string, TokenWorker> = new Map();
   private isRunning = false;
   private ws?: WebSocket;
+  private workerResults: WorkerResult[] = []
+  private closedTokens: Set<string> = new Set()
+
   constructor(private config: MasterConfig) { }
 
   // Entry point
@@ -50,6 +57,19 @@ export class Master {
       this.closeWorker(token)
     })
     this.isRunning = false
+
+    const report = this.generateReport()
+    console.log(`[Master] Final Report: ${report.solDelta} SOL`)
+  }
+
+  private generateReport(): MasterResult {
+    let solDelta = 0
+    let tokenDelta = 0
+    this.workerResults.forEach(result => {
+      solDelta += result.solDelta
+      tokenDelta += result.tokenDelta
+    })
+    return { solDelta, tokenDelta }
   }
 
   private runLive() {
@@ -126,17 +146,15 @@ export class Master {
   }
 
   public onEvent(event: TokenEvent) {
-    console.log("[Master] Event:", event)
-
     if (this.activeWorkers.has(event.mint)) {
       this.activeWorkers.get(event.mint)!.enqueueEvent({ type: "marketCapUpdate", event })
-    } else {
+    } else if (!this.closedTokens.has(event.mint)) {
       this.spawnWorker(event)
     }
   }
 
   public closeWorker(mint: string) {
-    console.log(`[Master] Closing worker for token ${mint}`)
+    this.closedTokens.add(mint)
     this.activeWorkers.delete(mint)
   }
 
@@ -144,7 +162,7 @@ export class Master {
     const { mint } = event
     const {
        defaultStrategy, walletPublicKey, defaultSlippage, 
-       priorityFee, influxService, tradePortal, dryRun, baseBid
+       priorityFee, influxService, pumpPortal, dryRun, baseBid
     } = this.config
     
     const worker = new TokenWorker({
@@ -155,9 +173,11 @@ export class Master {
       defaultSlippage,
       priorityFee,
       influx: influxService,
-      tradePortal,
+      pumpPortal,
       dryRun,
-    }, () => {
+    }, (result) => {
+      this.workerResults.push(result)
+      console.log(`[Master] Closing Token ${mint} Profit: ${result.solDelta} SOL, Remaining Tokens: ${result.tokenDelta}`)
       this.closeWorker(mint)
     })
 
@@ -197,7 +217,7 @@ if (import.meta.main) {
   const WALLET_PUBLIC_KEY = Deno.env.get("WALLET_PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY";
 
   const influxService = new InfluxService();
-  const tradePortalService = new TradePortalService({
+  const pumpPortalService = new PumpPortalService({
     rpcEndpoint: RPC_ENDPOINT,
     walletSecretKey: WALLET_SECRET,
   });
@@ -207,7 +227,7 @@ if (import.meta.main) {
     baseBid,
     dryRun,
     influxService,
-    tradePortal: tradePortalService,
+    pumpPortal: pumpPortalService,
     defaultStrategy: DummyStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
