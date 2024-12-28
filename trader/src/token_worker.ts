@@ -4,7 +4,7 @@ import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
 import { PumpPortalService } from "./services/pump_portal.ts"
 import { Master } from '@/trader/master.ts'
-import { logger, shorten } from '@/shared/utils.ts';
+import { logger, shorten } from '@/shared/utils.ts'
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -196,7 +196,19 @@ export class TokenWorker {
       })
       return result
     } catch (err) {
-      logger.error(`[TokenWorker] Failed to BUY ${shorten(this.tokenMint)}:`, err)
+      const message = (err as Error).message?.toLowerCase() || ''
+      if (message.includes("raydium token")) {
+        logger.error("[TokenWorker] Closing Raydium token", { mint: this.tokenMint })
+        this.handleDecision({ action: "close" })
+      } else if (message.includes("preflight simulation")) {
+        logger.error("[TokenWorker] Closing worker because unable to buy", { mint: this.tokenMint })
+        this.handleDecision({ action: "close" })
+      } else if (message.includes("too much volatility")) {
+        logger.error("[TokenWorker] Closing worker because too much volatility", { mint: this.tokenMint })
+        this.handleDecision({ action: "close" })
+      } else {
+        logger.error(`[TokenWorker] Failed to BUY ${shorten(this.tokenMint)}:`, err)
+      }
       return null
     }
   }
@@ -256,7 +268,7 @@ export class TokenWorker {
 
       // if transaction simulation failed, close this worker
       if (err instanceof Error && err.message?.toLowerCase()?.includes("preflight simulation")) {
-        logger.info(`[TokenWorker] Closing worker because unable to sell, full mint: ${this.tokenMint}`)
+        logger.info(`[TokenWorker] Closing worker because unable to sell`, { mint: this.tokenMint })
         this.handleDecision({ action: "close" })
       }
 

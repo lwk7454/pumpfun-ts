@@ -1,7 +1,10 @@
+import dotenv from 'dotenv'
 import { PumpPortalService } from '@/trader/services/index.ts'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token"
-import { wait } from '@/shared/utils.ts';
+import { logger, wait } from '@/shared/utils.ts';
+
+dotenv.config()
 
 // Global Unhandled Rejection Handler
 addEventListener("unhandledrejection", (event) => {
@@ -24,6 +27,10 @@ const rpc = Deno.env.get("RPC_ENDPOINT") || ''
 const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 
+const raydiumTokens = [
+  '7PAku7wvHd4sruRiXSo5ECTQ8GapbonaBfxvGThvpump'
+]
+
 const pumpPortal = new PumpPortalService({
   rpcEndpoint: rpc,
   walletSecretKey
@@ -41,6 +48,8 @@ const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
   { programId: TOKEN_PROGRAM_ID }
 )
 
+logger.info('Found', tokenAccounts.value.length, 'token accounts')
+
 // Iterate through the token accounts and extract balance info
 const balances = tokenAccounts.value.map(({ pubkey, account }) => {
   const parsedInfo = account.data.parsed.info
@@ -50,29 +59,32 @@ const balances = tokenAccounts.value.map(({ pubkey, account }) => {
   // SPL token amounts are stored as integers—divide by 10^decimals
   const balance = Number(amount) / 10 ** decimals
 
-  return {
+  const result = {
     tokenAccount: pubkey.toBase58(),
     mintAddress,
     balance,
   }
+
+  logger.info(result)
+
+  return result
 })
 
 const promises = []
 
 for (const balance of balances) {
-  if (balance.mintAddress.includes("pump")) {
-    await wait(0.3)
-    promises.push(pumpPortal.trade({
-      publicKey: walletPublicKey,
-      action: "sell",
-      mint: balance.mintAddress,
-      denominatedInSol: "false",
-      amount: balance.balance,
-      slippage: 10,
-      priorityFee: 0.000001,
-      pool: "pump",
-    }))
-  }
+  await wait(0.3)
+  promises.push(pumpPortal.trade({
+    publicKey: walletPublicKey,
+    action: "sell",
+    mint: balance.mintAddress,
+    denominatedInSol: "false",
+    amount: balance.balance,
+    slippage: 10,
+    priorityFee: 0.000001,
+    pool: raydiumTokens.includes(balance.mintAddress) ? "raydium" : "pump",
+  }))
+
 }
 
 await Promise.all(promises)

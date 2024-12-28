@@ -1,7 +1,8 @@
-import { Keypair, VersionedTransaction, Connection, ParsedTransactionWithMeta } from '@solana/web3.js'
+import { Keypair, VersionedTransaction, Connection, ParsedTransactionWithMeta, sendAndConfirmRawTransaction } from '@solana/web3.js'
 import bs58 from 'bs58'
 import { TradeAction } from '@/trader/interfaces.ts'
 import { logger } from '@/shared/utils.ts'
+import { Buffer } from 'node:buffer'
 
 export interface PumpPortalOptions {
   rpcEndpoint: string
@@ -60,8 +61,6 @@ export class PumpPortalService {
       timestamp: Date.now(),
     }
 
-    logger.info("[PumpPortalService] Normalized transaction", result)
-
     return result
   }
 
@@ -119,11 +118,32 @@ export class PumpPortalService {
     // 4. Send transaction to Solana
     let signature: string
     try {
-      signature = await connection.sendTransaction(tx) // runs preflight simulation by default
+      const rawTx = Buffer.from(tx.serialize())
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+      const tempSig = bs58.encode(tx.signatures[0])
+      const confirmationStrategy = {
+        blockhash,
+        lastValidBlockHeight,
+        signature: tempSig,
+        //  `commitment`, `preflightCommitment`, etc.
+      };
+
+      signature = await sendAndConfirmRawTransaction(connection, rawTx, confirmationStrategy)
+
+      logger.info("[PumpPortalService] Transaction confirmed:", signature)
     } catch (err: unknown) {
+      const message = (err as Error).message?.toLowerCase() || ''
       // Check if it's specifically a "preflight simulation" error
-      if (err instanceof Error && err.message?.toLowerCase()?.includes("simulation")) {
-        logger.error("[PumpPortalService] Transaction preflight simulation error", { err })
+      if (message.includes("simulation")) {
+
+        if (message.includes("The bonding curve has completed")) {
+          throw new Error("Closing Raydium token")
+        } else if (message.includes("too much sol required")) {
+          throw new Error("Too much volatility")
+        } else {
+          logger.error("[PumpPortalService] Transaction preflight simulation error", { err })
+        }
+
         throw new Error("Solana transaction preflight simulation error")
       }
       // Otherwise, some other send/connection error
@@ -131,25 +151,8 @@ export class PumpPortalService {
       throw new Error("Failed to send transaction to Solana network")
     }
 
-    // 5. Confirm transaction
+    // 6. Retrieve the parsed transaction to build a final trade report
     try {
-      logger.info("[PumpPortalService] Transaction sent:", signature)
-
-      const latestBlockhash = await connection.getLatestBlockhash("confirmed")
-      const confirmationStrategy = {
-        signature,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      }
-
-      const confirmation = await connection.confirmTransaction(confirmationStrategy)
-      if (confirmation.value.err) {
-        throw new Error("Transaction failure on Solana chain")
-      }
-
-      logger.info("[PumpPortalService] Transaction confirmed:", signature)
-
-      // 6. Retrieve the parsed transaction to build a final trade report
       const txn = await connection.getParsedTransaction(signature, {
         maxSupportedTransactionVersion: 0,
       })
