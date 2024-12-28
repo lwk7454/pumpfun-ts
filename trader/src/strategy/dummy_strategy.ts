@@ -1,5 +1,5 @@
 import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
-import { logger } from '@/shared/utils.ts';
+import { logger, shorten } from '@/shared/utils.ts'
 
 export class DummyStrategy extends Strategy {
 
@@ -37,10 +37,10 @@ export class DummyStrategy extends Strategy {
   private getTokenVolatility() {
     const lastEvent = this.events.at(-1)!
     const recentEvents = this.events.filter(e => e.timestamp > lastEvent.timestamp - this.GRACE_PERIOD)
-    
+
     const totalPricePercentageChange = recentEvents.reduce((prev, curr, idx) => {
       if (idx === 0) return prev
-      return prev + Math.abs(1 - (this.getPrice(curr)  / this.getPrice(recentEvents[idx - 1])))
+      return prev + Math.abs(1 - (this.getPrice(curr) / this.getPrice(recentEvents[idx - 1])))
     }, 0)
 
     return totalPricePercentageChange
@@ -61,11 +61,11 @@ export class DummyStrategy extends Strategy {
   }
 
   onInit(token: string): void {
-    logger.info(`[DummyStrategy] Initialized for ${token.substring(0, 4)}.`)
+    logger.info(`[DummyStrategy] Initialized for ${shorten(token)}.`)
   }
 
   onClose(token: string): void {
-    logger.info(`[DummyStrategy] Closed for ${token.substring(0, 4)}.`)
+    logger.info(`[DummyStrategy] Closed for ${shorten(token)}.`)
   }
 
   onHeartbeat(): Decision {
@@ -77,7 +77,7 @@ export class DummyStrategy extends Strategy {
       return { action: "hold" }
     }
 
-    if (!this.hasBought()) {
+    if (!this.hasBought()) {  // buying logic
       const firstEvent = this.events[0]!
       const lastEvent = this.events.at(-1)!
       const priceDiff = this.getPrice(lastEvent) / this.getPrice(firstEvent)
@@ -94,7 +94,7 @@ export class DummyStrategy extends Strategy {
         logger.info(`[DummyStrategy] Buying token, ratio: ${priceDiff}`)
         return { action: "buy", amount: this.baseBid }
       }
-    } else if (!this.hasSold()) {
+    } else if (!this.hasSold()) {  // selling logic
       const buyEvent = this.actions.find(action => action.txType === "buy")!
       const lastEvent = this.events.at(-1)!
       const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)

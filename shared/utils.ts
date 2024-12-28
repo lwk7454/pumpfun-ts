@@ -9,6 +9,14 @@ export function waitApprox(seconds: number, variance: number = 0.1) {
   return wait(seconds + random)
 }
 
+export function shorten(address: string) {
+  return address.slice(0, 6)
+}
+
+export function printSol(amount: number) {
+  return amount.toFixed(7)
+}
+
 export async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, backoffFactor = 2): Promise<Response> {
   let attempt = 0
   let delay = 1000 // 1 second base

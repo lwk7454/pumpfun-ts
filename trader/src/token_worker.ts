@@ -4,7 +4,7 @@ import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
 import { PumpPortalService } from "./services/pump_portal.ts"
 import { Master } from '@/trader/master.ts'
-import { logger } from '@/shared/utils.ts';
+import { logger, shorten } from '@/shared/utils.ts';
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -18,7 +18,7 @@ export interface WorkerConfig {
   dryRun: boolean
 }
 
-export type WorkerEvent = {
+export type WorkerCommand = {
   type: "marketCapUpdate"
   event: TokenEvent
 } | {
@@ -41,7 +41,7 @@ export class TokenWorker {
   private actions: TradeAction[] = []
 
   // Queue related properties
-  private eventQueue: WorkerEvent[] = []
+  private commandQueue: WorkerCommand[] = []
   private isProcessing = false
 
   public boughtTokens: number = 0
@@ -68,8 +68,8 @@ export class TokenWorker {
     return await this.handleDecision(decision)
   }
 
-  public enqueueEvent(event: WorkerEvent): void {
-    this.eventQueue.push(event)
+  public enqueueCommand(command: WorkerCommand): void {
+    this.commandQueue.push(command)
     if (!this.isProcessing) {
       this.processQueue()
     }
@@ -78,11 +78,11 @@ export class TokenWorker {
   private async processQueue(): Promise<void> {
     this.isProcessing = true
 
-    while (this.eventQueue.length > 0 && !this.isComplete) {
-      const event = this.eventQueue.shift()!
-      if (event.type === "marketCapUpdate") {
-        await this.handleMarketCapUpdate(event.event)
-      } else if (event.type === "heartbeat") {
+    while (this.commandQueue.length > 0 && !this.isComplete) {
+      const command = this.commandQueue.shift()!
+      if (command.type === "marketCapUpdate") {
+        await this.handleMarketCapUpdate(command.event)
+      } else if (command.type === "heartbeat") {
         await this.heartbeat()
       }
     }
@@ -154,7 +154,7 @@ export class TokenWorker {
       const gasCost = 0.000006 // TODO: get from config
       const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
-      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${this.tokenMint.substring(0, 4)} @ ${lastPrice}`)
+      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "buy",
@@ -180,7 +180,7 @@ export class TokenWorker {
         pool: "pump",
       })
 
-      logger.info(`[TokenWorker] BUY transaction successful: ${result}`)
+      logger.info(`[TokenWorker] BUY transaction successful: `, result)
 
       await this.config.influx.recordTradeEvent({
         _measurement: "trade",
@@ -196,7 +196,7 @@ export class TokenWorker {
       })
       return result
     } catch (err) {
-      logger.error(`[TokenWorker] Failed to BUY ${this.tokenMint.substring(0, 4)}:`, err)
+      logger.error(`[TokenWorker] Failed to BUY ${shorten(this.tokenMint)}:`, err)
       return null
     }
   }
@@ -210,7 +210,7 @@ export class TokenWorker {
       const gasCost = 0.000006 // TODO: get from config
       const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
-      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${this.tokenMint.substring(0, 4)} @ ${lastPrice}`)
+      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "sell",
@@ -236,7 +236,7 @@ export class TokenWorker {
         pool: "pump",
       })
 
-      logger.info(`[TokenWorker] SELL transaction successful: ${result}`)
+      logger.info(`[TokenWorker] SELL transaction successful: `, result)
 
       await this.config.influx.recordTradeEvent({
         _measurement: "trade",
@@ -252,7 +252,14 @@ export class TokenWorker {
       })
       return result
     } catch (err) {
-      logger.error(`[TokenWorker] Failed to SELL ${this.tokenMint.substring(0, 4)}:`, err)
+      logger.error(`[TokenWorker] Failed to SELL ${shorten(this.tokenMint)}:`, err)
+
+      // if transaction simulation failed, close this worker
+      if (err instanceof Error && err.message?.toLowerCase()?.includes("preflight simulation")) {
+        logger.info(`[TokenWorker] Closing worker because unable to sell, full mint: ${this.tokenMint}`)
+        this.handleDecision({ action: "close" })
+      }
+
       return null
     }
   }

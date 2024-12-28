@@ -4,7 +4,7 @@ import { InfluxService, PumpPortalService } from "@/trader/services/index.ts"
 import { DummyStrategy } from "@/trader/strategy/dummy_strategy.ts"
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args"
-import { logger, wait } from "@/shared/utils.ts"
+import { logger, printSol, shorten, wait } from "@/shared/utils.ts"
 
 export interface MasterConfig {
   maxOpenPositions: number
@@ -62,7 +62,7 @@ export class Master {
     this.isRunning = false
 
     const report = this.generateReport()
-    logger.info(`[Master] Final Report: ${report.solDelta} SOL`)
+    logger.info(`[Master] Final Report: ${printSol(report.solDelta)} SOL`)
   }
 
   private generateReport(): MasterResult {
@@ -117,7 +117,7 @@ export class Master {
               keys: Array.from(this.subscribedTokens),
             }),
           )
-          // logger.info("Subscribed to token trade events for:", mint.substring(0, 4))
+          // logger.info("Subscribed to token trade events for:", mint)
         }
 
         if (['buy', 'sell'].includes(data.txType)) {
@@ -144,12 +144,12 @@ export class Master {
   private async heartBeat() {
     while (this.isRunning) {
       this.activeWorkers.forEach((worker) => {
-        worker.enqueueEvent({ type: "heartbeat" })
+        worker.enqueueCommand({ type: "heartbeat" })
       })
 
       if (Date.now() - this.lastReportTime > 1000 * 5) {
         const report = this.generateReport()
-        logger.info(`[Master] Report profit: ${report.solDelta} SOL, Subscribed tokens: ${this.subscribedTokens.size}, Open positions: ${this.openPositions.size}`)
+        logger.info(`[Master] Report profit: ${printSol(report.solDelta)} SOL, Subscribed tokens: ${this.subscribedTokens.size}, Open positions: ${this.openPositions.size}`)
         this.lastReportTime = Date.now()
       }
 
@@ -159,7 +159,7 @@ export class Master {
 
   public onEvent(event: TokenEvent) {
     if (this.activeWorkers.has(event.mint)) {
-      this.activeWorkers.get(event.mint)!.enqueueEvent({ type: "marketCapUpdate", event })
+      this.activeWorkers.get(event.mint)!.enqueueCommand({ type: "marketCapUpdate", event })
     } else if (!this.closedTokens.has(event.mint)) {
       this.spawnWorker(event)
     }
@@ -196,7 +196,7 @@ export class Master {
   public onWorkerComplete(result: WorkerResult) {
     if (result.solDelta !== 0) { // Only log if there was a profit/loss
       this.workerResults.push(result)
-      logger.info(`[Master] Closing Token ${result.mint.substring(0, 4)}... Profit: ${result.solDelta.toFixed(7)} SOL, Remaining Tokens: ${result.tokenDelta}`)
+      logger.info(`[Master] Closing Token ${shorten(result.mint)}... Profit: ${printSol(result.solDelta)} SOL, Remaining Tokens: ${result.tokenDelta}`)
     }
     this.subscribedTokens.delete(result.mint)
     this.closeWorker(result.mint)
@@ -255,9 +255,26 @@ if (import.meta.main) {
     pumpPortal: pumpPortalService,
     defaultStrategy: DummyStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 20,
+    defaultSlippage: 10,
     priorityFee: 0.00001,
   })
 
   master.run()
 }
+
+// Global Unhandled Rejection Handler
+addEventListener("unhandledrejection", (event) => {
+  console.error(
+    "Global: Unhandled Rejection at:",
+    event.promise,
+    "reason:",
+    event.reason,
+  )
+  event.preventDefault()
+})
+
+// Global Uncaught Exception Handler
+addEventListener("error", (event) => {
+  console.error("Global: Uncaught Exception thrown:", event.error)
+  event.preventDefault()
+})
