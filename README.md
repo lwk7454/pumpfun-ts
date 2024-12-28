@@ -3,7 +3,7 @@
 ## Dev Setup
 - Install Deno >= 2.0.0
 - Copy `.env.example` to `.env` and fill in the values
-- Run `deno install --allow-script`
+- Run `deno install --allow-scripts`
 - Requires InfluxDB running
 
 ## Trader

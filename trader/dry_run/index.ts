@@ -27,7 +27,7 @@ Deno.test('Dry run', async () => {
   }, true)
 
   const master = new Master({
-    maxOpenPositions: 10,
+    maxOpenPositions: 15,
     baseBid: 0.01,
     dryRun,
     influxService,
@@ -53,7 +53,6 @@ Deno.test('Dry run', async () => {
     while (endDate.getTime() > time.now) {
       time.tick(100)
     }
-
   } catch (error) {
     logger.error("Error processing events:", error)
   } finally {

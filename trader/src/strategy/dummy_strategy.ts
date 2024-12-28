@@ -5,8 +5,10 @@ export class DummyStrategy extends Strategy {
 
   LOSS_THRESHOLD = 0.9
   BUY_THRESHOLD = 1.1
-  PROFIT_THRESHOLD = 1.1
+  PROFIT_THRESHOLD = 1.3
   TIMEOUT = 1000 * 30
+  GRACE_PERIOD = 1000 * 15
+  VOLATILITY_THRESHOLD = 3 // ratio of changes
 
   private isBought: boolean = false
   private isSold: boolean = false
@@ -25,6 +27,25 @@ export class DummyStrategy extends Strategy {
     }
   }
 
+  private getTokenAge() {
+    const lastEvent = this.events.at(-1)!
+    const firstEvent = this.events.at(0)!
+    return lastEvent.timestamp - firstEvent.timestamp
+  }
+
+  // Determine volatility by finding out the total changes in the past 15 seconds
+  private getTokenVolatility() {
+    const lastEvent = this.events.at(-1)!
+    const recentEvents = this.events.filter(e => e.timestamp > lastEvent.timestamp - this.GRACE_PERIOD)
+    
+    const totalPricePercentageChange = recentEvents.reduce((prev, curr, idx) => {
+      if (idx === 0) return prev
+      return prev + Math.abs(1 - (this.getPrice(curr)  / this.getPrice(recentEvents[idx - 1])))
+    }, 0)
+
+    return totalPricePercentageChange
+  }
+
   private hasBought() {
     if (this.isBought) return true
     return this.isBought = this.actions.some(action => action.txType === "buy")
@@ -36,35 +57,7 @@ export class DummyStrategy extends Strategy {
   }
 
   onMarketCapUpdate(_event: TokenEvent): Decision {
-    if (this.hasBought() && this.hasSold()) {
-      return { action: "close" }
-    }
-
-    if (this.events.length < 2) {
-      return { action: "hold" }
-    }
-
-    if (!this.hasBought()) {
-      const firstEvent = this.events[0]!
-      const lastEvent = this.events.at(-1)!
-      const priceDiff = this.getPrice(lastEvent) / this.getPrice(firstEvent)
-
-      if (priceDiff > this.BUY_THRESHOLD) {
-        logger.info(`[DummyStrategy] Buying token, ratio: ${priceDiff}`)
-        return { action: "buy", amount: this.baseBid }
-      }
-    } else if (!this.hasSold()) {
-      const buyEvent = this.actions.find(action => action.txType === "buy")!
-      const lastEvent = this.events.at(-1)!
-      const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)
-
-      if (priceDiff < this.LOSS_THRESHOLD || priceDiff > this.PROFIT_THRESHOLD) {
-        logger.info(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
-        return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
-      }
-    }
-
-    return { action: "hold" }
+    return this.onHeartbeat()
   }
 
   onInit(token: string): void {
@@ -78,17 +71,46 @@ export class DummyStrategy extends Strategy {
   onHeartbeat(): Decision {
     if (this.hasBought() && this.hasSold()) {
       return { action: "close" }
-    } else if (this.hasBought()) {
+    }
+
+    if (this.events.length < 2) {
+      return { action: "hold" }
+    }
+
+    if (!this.hasBought()) {
+      const firstEvent = this.events[0]!
+      const lastEvent = this.events.at(-1)!
+      const priceDiff = this.getPrice(lastEvent) / this.getPrice(firstEvent)
+
+      if (this.getTokenVolatility() > this.VOLATILITY_THRESHOLD) {
+        logger.info(`[DummyStrategy] Volatility too high, closing`)
+        return { action: "close" }
+      }
+
+      if (
+        this.getTokenAge() > this.GRACE_PERIOD &&
+        priceDiff > this.BUY_THRESHOLD
+      ) {
+        logger.info(`[DummyStrategy] Buying token, ratio: ${priceDiff}`)
+        return { action: "buy", amount: this.baseBid }
+      }
+    } else if (!this.hasSold()) {
       const buyEvent = this.actions.find(action => action.txType === "buy")!
       const lastEvent = this.events.at(-1)!
-      if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
+      const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)
+
+      if (priceDiff < this.LOSS_THRESHOLD || priceDiff > this.PROFIT_THRESHOLD) {
+        logger.info(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
+        return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
+      } else if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
         logger.info(`[DummyStrategy] Timeout sell`)
         return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
-      }
-    } else {
-      const firstEvent = this.events.at(0)!
-      if (Date.now() - firstEvent.timestamp > this.TIMEOUT) {
-        return { action: 'close' }
+      } else {
+        const lastEvent = this.events.at(-1)!
+        if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
+          logger.info(`[DummyStrategy] Inactive close`)
+          return { action: 'close' }
+        }
       }
     }
 

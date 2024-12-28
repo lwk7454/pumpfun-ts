@@ -147,9 +147,9 @@ export class Master {
         worker.enqueueEvent({ type: "heartbeat" })
       })
 
-      if (Date.now() - this.lastReportTime > 1000 * 60 * 5) {
+      if (Date.now() - this.lastReportTime > 1000 * 5) {
         const report = this.generateReport()
-        logger.info(`[Master] Report profit: ${report.solDelta} SOL, Subscribed tokens: ${this.subscribedTokens.size}`)
+        logger.info(`[Master] Report profit: ${report.solDelta} SOL, Subscribed tokens: ${this.subscribedTokens.size}, Open positions: ${this.openPositions.size}`)
         this.lastReportTime = Date.now()
       }
 
@@ -198,6 +198,7 @@ export class Master {
       this.workerResults.push(result)
       logger.info(`[Master] Closing Token ${result.mint.substring(0, 4)}... Profit: ${result.solDelta.toFixed(7)} SOL, Remaining Tokens: ${result.tokenDelta}`)
     }
+    this.subscribedTokens.delete(result.mint)
     this.closeWorker(result.mint)
   }
 
