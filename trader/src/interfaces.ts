@@ -1,6 +1,6 @@
 export type Decision = {
   action: "buy" | "sell" | "hold" | "close"
-  amount?: number // sol amount
+  amount?: number // sol amount for buy, token amount for sell
 }
 
 export abstract class Strategy {

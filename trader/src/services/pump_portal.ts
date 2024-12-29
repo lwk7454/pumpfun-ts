@@ -1,11 +1,10 @@
-import { Keypair, VersionedTransaction, Connection, ParsedTransactionWithMeta, sendAndConfirmRawTransaction } from '@solana/web3.js'
-import bs58 from 'bs58'
-import { TradeAction } from '@/trader/interfaces.ts'
+import { callWithConnectionList } from '@/shared/solana.ts'
 import { logger } from '@/shared/utils.ts'
-import { Buffer } from 'node:buffer'
+import { TradeAction } from '@/trader/interfaces.ts'
+import { Connection, ConnectionConfig, Keypair, ParsedTransactionWithMeta, VersionedTransaction } from '@solana/web3.js'
+import bs58 from 'bs58'
 
 export interface PumpPortalOptions {
-  rpcEndpoint: string
   walletSecretKey: string   // Base58 string or other secure format
 }
 
@@ -21,12 +20,22 @@ export interface TradeRequest {
 }
 
 export class PumpPortalService {
-  private connection: Connection | null = null
+  private connections: Record<string, Connection> = {}
   private keypair: Keypair | null = null
 
   constructor(private options: PumpPortalOptions, dryRun = false) {
     if (dryRun) return
-    this.connection = new Connection(this.options.rpcEndpoint, "confirmed")
+    const connectionConfig: ConnectionConfig = {
+      commitment: 'confirmed',
+      disableRetryOnRateLimit: true,
+    }
+    this.connections = {
+      solana: new Connection(Deno.env.get("RPC_SOLANA")!, connectionConfig),
+      quicknode: new Connection(Deno.env.get("RPC_QUICKNODE")!, connectionConfig),
+      drpc: new Connection(Deno.env.get("RPC_DRPC")!, connectionConfig),
+      ankr: new Connection(Deno.env.get("RPC_ANKR")!, connectionConfig),
+      solanatracker: new Connection(Deno.env.get("RPC_SOLANATRACKER")!, connectionConfig),
+    }
     this.keypair = Keypair.fromSecretKey(bs58.decode(this.options.walletSecretKey))
   }
 
@@ -66,7 +75,6 @@ export class PumpPortalService {
 
   async trade(request: TradeRequest): Promise<TradeAction> {
     const keypair = this.keypair!
-    const connection = this.connection!
 
     logger.info("[PumpPortalService] Attempting to sign and send transaction", { request })
 
@@ -118,19 +126,16 @@ export class PumpPortalService {
     // 4. Send transaction to Solana
     let signature: string
     try {
-      const rawTx = Buffer.from(tx.serialize())
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
-      const tempSig = bs58.encode(tx.signatures[0])
-      const confirmationStrategy = {
-        blockhash,
-        lastValidBlockHeight,
-        signature: tempSig,
-        //  `commitment`, `preflightCommitment`, etc.
-      };
-
-      signature = await sendAndConfirmRawTransaction(connection, rawTx, confirmationStrategy)
-
-      logger.info("[PumpPortalService] Transaction confirmed:", signature)
+      const t = Date.now()
+      signature = await callWithConnectionList(
+        (connection) => connection.sendTransaction(tx),
+        [
+          this.connections.quicknode,
+          this.connections.solana,
+          this.connections.solanatracker,
+        ],
+      )
+      console.log(`[PumpPortalService] Transaction sent in ${Date.now() - t}ms`)
     } catch (err: unknown) {
       const message = (err as Error).message?.toLowerCase() || ''
       // Check if it's specifically a "preflight simulation" error
@@ -151,17 +156,69 @@ export class PumpPortalService {
       throw new Error("Failed to send transaction to Solana network")
     }
 
-    // 6. Retrieve the parsed transaction to build a final trade report
+    // 5. Confirm transaction
     try {
-      const txn = await connection.getParsedTransaction(signature, {
-        maxSupportedTransactionVersion: 0,
-      })
+      logger.info("[PumpPortalService] Transaction sent:", signature)
 
-      return this.normalizeTransaction(request, txn!)
+      const t1 = Date.now()
+      const latestBlockhash = await callWithConnectionList(
+        (connection) => connection.getLatestBlockhash("confirmed"),
+        [
+          this.connections.solanatracker,
+          this.connections.quicknode,
+          this.connections.drpc,
+          this.connections.solana,
+        ],
+      )
+      console.log(`[PumpPortalService] Latest blockhash in ${Date.now() - t1}ms`)
+      const confirmationStrategy = {
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      }
+      const t2 = Date.now()
+      const confirmation = await callWithConnectionList(
+        (connection) => connection.confirmTransaction(confirmationStrategy),
+        [
+          this.connections.solanatracker,
+          this.connections.solana,
+          this.connections.quicknode,
+        ],
+      )
+      console.log(`[PumpPortalService] Transaction confirmed in ${Date.now() - t2}ms`)
+      if (confirmation.value.err) {
+        throw new Error("Transaction failure on Solana chain")
+      }
+
+      logger.info("[PumpPortalService] Transaction confirmed:", signature)
     } catch (err) {
       logger.error("[PumpPortalService] Transaction confirmation error", { err })
-      // Make sure to differentiate from the preflight error above
       throw new Error("Failed to confirm transaction on Solana")
+    }
+
+    // 6. Retrieve the parsed transaction to build a final trade report
+    try {
+      const txn = await callWithConnectionList(
+        async (connection) => {
+          const txn = await connection.getParsedTransaction(signature, {
+            maxSupportedTransactionVersion: 0,
+          })
+          if (!txn) throw new Error("next connection")
+          return txn
+        },
+        [
+          this.connections.quicknode,
+          this.connections.solanatracker,
+          this.connections.drpc,
+          this.connections.ankr,
+          this.connections.solana,
+        ],
+      )
+      return this.normalizeTransaction(request, txn!) 
+    } catch (err) {
+      logger.error("[PumpPortalService] Get parsed transaction error", { err })
+      // Make sure to differentiate from the preflight error above
+      throw new Error("Failed to get parsed transaction on Solana")
     }
   }
 }

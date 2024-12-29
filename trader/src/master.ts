@@ -237,13 +237,11 @@ if (import.meta.main) {
   const maxOpenPositions: number = Number(args.maxOpenPositions)
   const baseBid: number = Number(args.baseBid)
 
-  const RPC_ENDPOINT = Deno.env.get("RPC_ENDPOINT") || "https://api.mainnet-beta.solana.com"
   const WALLET_SECRET = Deno.env.get("PRIVATE_KEY") || "YOUR_BASE58_PRIVATE_KEY"
   const WALLET_PUBLIC_KEY = Deno.env.get("PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY"
 
   const influxService = new InfluxService()
   const pumpPortalService = new PumpPortalService({
-    rpcEndpoint: RPC_ENDPOINT,
     walletSecretKey: WALLET_SECRET,
   })
 

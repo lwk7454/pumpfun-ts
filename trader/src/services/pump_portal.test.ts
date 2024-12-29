@@ -4,7 +4,6 @@ import { Connection } from '@solana/web3.js';
 
 Deno.test("pump portal", async () => {
   const pumpPortal = new PumpPortalService({
-    rpcEndpoint: "https://api.mainnet-beta.solana.com",
     walletSecretKey: Deno.env.get("PRIVATE_KEY")!,
   })
   const result = await pumpPortal.trade({

@@ -13,7 +13,6 @@ Deno.test('Dry run', async () => {
   const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T03:32:00Z')
   using time = new FakeTime(startDate);
   const dryRun = true
-  const RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com'
   const WALLET_SECRET = ''
   const WALLET_PUBLIC_KEY = ''
 
@@ -22,7 +21,6 @@ Deno.test('Dry run', async () => {
 
   const influxService = new InfluxService()
   const pumpPortalService = new PumpPortalService({
-    rpcEndpoint: RPC_ENDPOINT,
     walletSecretKey: WALLET_SECRET,
   }, true)
 

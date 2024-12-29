@@ -32,7 +32,6 @@ const raydiumTokens = [
 ]
 
 const pumpPortal = new PumpPortalService({
-  rpcEndpoint: rpc,
   walletSecretKey
 })
 
