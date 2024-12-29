@@ -6,9 +6,9 @@ export class DummyStrategy extends Strategy {
   LOSS_THRESHOLD = 0.9
   BUY_THRESHOLD = 1.1
   PROFIT_THRESHOLD = 1.3
-  TIMEOUT = 1000 * 30
+  TIMEOUT = 1000 * 60
   GRACE_PERIOD = 1000 * 15
-  VOLATILITY_THRESHOLD = 3 // ratio of changes
+  VOLATILITY_THRESHOLD = 3 // x100% ratio of changes
 
   private isBought: boolean = false
   private isSold: boolean = false

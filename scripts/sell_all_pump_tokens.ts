@@ -23,11 +23,11 @@ addEventListener("error", (event) => {
   event.preventDefault()
 })
 
-const rpc = Deno.env.get("RPC_ENDPOINT") || ''
+const rpc = Deno.env.get("RPC_SOLANA") || ''
 const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 
-const raydiumTokens = [
+const skipTokens = [
   '7PAku7wvHd4sruRiXSo5ECTQ8GapbonaBfxvGThvpump'
 ]
 
@@ -72,6 +72,7 @@ const balances = tokenAccounts.value.map(({ pubkey, account }) => {
 const promises = []
 
 for (const balance of balances) {
+  if (skipTokens.includes(balance.mintAddress)) continue
   await wait(0.3)
   promises.push(pumpPortal.trade({
     publicKey: walletPublicKey,
@@ -81,7 +82,7 @@ for (const balance of balances) {
     amount: balance.balance,
     slippage: 10,
     priorityFee: 0.000001,
-    pool: raydiumTokens.includes(balance.mintAddress) ? "raydium" : "pump",
+    pool: "pump",
   }))
 
 }
