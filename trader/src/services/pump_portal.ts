@@ -44,34 +44,46 @@ export class PumpPortalService {
     tx: ParsedTransactionWithMeta,
   ): TradeAction {
     const solChange =
-      ((tx.meta?.postBalances[0] || 0) - (tx.meta?.preBalances[0] || 0)) / 10e9
-    const tokenChange =
-      (tx.meta?.postTokenBalances?.find(b => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0) -
-      (tx.meta?.preTokenBalances?.find(b => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0)
+      ((tx.meta?.postBalances?.[0] ?? 0) - (tx.meta?.preBalances?.[0] ?? 0)) / 1e9
+    const preToken =
+      tx.meta?.preTokenBalances?.find((b) => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0
+    const postToken =
+      tx.meta?.postTokenBalances?.find((b) => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0
+    const tokenChange = postToken - preToken
 
-    let solAmount = 0
-    if (request.action === "buy") {
-      solAmount = request.amount
-    } else if (request.action === "sell") {
-      const gasFee = (tx.meta?.fee || 0) / 10e9
-      const priorityFee = request.priorityFee || 0
-      solAmount = (solChange + gasFee + priorityFee) / 0.985
+    const gas = (tx.meta?.fee ?? 0) / 1e9
+    const rent = 0.00203928
+    const apiFeeRatio = 0.005
+    const tradingFeeRatio = 0.01
+
+    // 3) Prepare the result object
+    const result: TradeAction = {
+      mint: request.mint,
+      txType: request.action, // "buy" or "sell"
+      tokenAmount: Math.abs(tokenChange),
+      solAmount: 0,    // fill below
+      feeAmount: 0,    // fill below
+      tradePrice: 0,   // fill below
+      newTokenBalance: postToken,
+      marketCapSol: 0,
+      timestamp: Date.now(),
     }
 
-    const result = {
-      mint: request.mint,
-      txType: request.action,
-      tokenAmount: Math.abs(tokenChange),
-      solAmount,
-      feeAmount: Math.abs(solAmount - solChange),
-      tradePrice: tokenChange ? (solAmount / Math.abs(tokenChange)) : 0,
-      newTokenBalance: tx.meta?.postTokenBalances?.find(b => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0,
-      marketCapSol: 0, // TODO
-      timestamp: Date.now(),
+    if (request.action === "buy") {
+      result.solAmount = request.amount
+      result.feeAmount = gas + (request.amount * tradingFeeRatio) + (request.amount * apiFeeRatio) + rent
+      result.tradePrice = request.amount / Math.abs(tokenChange)
+    } else {
+      const solAmount = (solChange + gas - rent) / (1 - apiFeeRatio - tradingFeeRatio)
+      const apiFee = solAmount * (apiFeeRatio + tradingFeeRatio)
+      result.tradePrice = solAmount / Math.abs(tokenChange)
+      result.solAmount = solAmount
+      result.feeAmount = gas + apiFee - rent
     }
 
     return result
   }
+
 
   async trade(request: TradeRequest): Promise<TradeAction> {
     const keypair = this.keypair!
@@ -214,7 +226,7 @@ export class PumpPortalService {
           this.connections.solana,
         ],
       )
-      return this.normalizeTransaction(request, txn!) 
+      return this.normalizeTransaction(request, txn!)
     } catch (err) {
       logger.error("[PumpPortalService] Get parsed transaction error", { err })
       // Make sure to differentiate from the preflight error above
