@@ -6,9 +6,9 @@ export class DummyStrategy extends Strategy {
   LOSS_THRESHOLD = 0.9
   BUY_THRESHOLD = 1.1
   PROFIT_THRESHOLD = 1.3
-  TIMEOUT = 1000 * 60
-  GRACE_PERIOD = 1000 * 15
-  VOLATILITY_THRESHOLD = 3 // x100% ratio of changes
+  TIMEOUT = 1000 * 120
+  GRACE_PERIOD = 1000 * 30
+  VOLATILITY_THRESHOLD = 2 // x100% ratio of changes
 
   private isBought: boolean = false
   private isSold: boolean = false
@@ -103,14 +103,8 @@ export class DummyStrategy extends Strategy {
         logger.info(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
         return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
       } else if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
-        logger.info(`[DummyStrategy] Timeout sell`)
+        logger.info(`[DummyStrategy] Inactive sell`)
         return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
-      } else {
-        const lastEvent = this.events.at(-1)!
-        if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
-          logger.info(`[DummyStrategy] Inactive close`)
-          return { action: 'close' }
-        }
       }
     }
 

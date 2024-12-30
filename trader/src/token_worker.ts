@@ -79,7 +79,9 @@ export class TokenWorker {
     this.isProcessing = true
 
     while (this.commandQueue.length > 0 && !this.isComplete) {
-      const command = this.commandQueue.shift()!
+      // only process the last command, remove all earlier commands
+      const command = this.commandQueue.pop()!
+      if (this.commandQueue.length > 0)this.commandQueue = []
       if (command.type === "marketCapUpdate") {
         await this.handleMarketCapUpdate(command.event)
       } else if (command.type === "heartbeat") {

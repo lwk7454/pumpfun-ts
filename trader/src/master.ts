@@ -1,10 +1,10 @@
 // master.ts
+import { logger, printSol, shorten, wait } from "@/shared/utils.ts"
 import { StrategyConstructor, TokenEvent, TradeEvent } from "@/trader/interfaces.ts"
 import { InfluxService, PumpPortalService } from "@/trader/services/index.ts"
-import { DummyStrategy } from "@/trader/strategy/dummy_strategy.ts"
+import { HealthyGrowthStrategy } from '@/trader/strategy/index.ts'
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args"
-import { logger, printSol, shorten, wait } from "@/shared/utils.ts"
 
 export interface MasterConfig {
   maxOpenPositions: number
@@ -224,7 +224,7 @@ if (import.meta.main) {
     default: {
       dryRun: false,
       maxOpenPositions: "10",
-      baseBid: "0.001",
+      baseBid: "0.005",
     },
     alias: {
       dryRun: ["dry"],
@@ -251,7 +251,8 @@ if (import.meta.main) {
     dryRun,
     influxService,
     pumpPortal: pumpPortalService,
-    defaultStrategy: DummyStrategy,
+    // defaultStrategy: DummyStrategy,
+    defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
     priorityFee: 0.00001,

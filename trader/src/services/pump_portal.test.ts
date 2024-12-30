@@ -30,14 +30,14 @@ Deno.test("PumpPortalService.normalizeTransaction - Buy Transaction", () => {
   assertEquals(tradeAction.mint, buyRequest.mint, 'mint')
   assertEquals(tradeAction.txType, 'buy', 'txType')
   assertAlmostEquals(tradeAction.tokenAmount, 29799.294421, 1e-6, 'tokenAmount')
-  assertAlmostEquals(tradeAction.solAmount, 0.001, 1e-6, 'solAmount')
+  assertAlmostEquals(tradeAction.solAmount, 0.001, 1e-8, 'solAmount')
   assertAlmostEquals(tradeAction.feeAmount, 
     0.000015 + // gas
     0.00001 + // pump.fun trading fee
     0.000004999 + // pumpportal API fee
     0.00203928 // rent cost
     , 1e-6, 'feeAmount')
-  assertAlmostEquals(tradeAction.tradePrice, 0.001 / 29799.294421, 1e-6, 'tradePrice')
+  assertAlmostEquals(tradeAction.tradePrice, 0.001 / 29799.294421, 1e-9, 'tradePrice')
   assertAlmostEquals(tradeAction.newTokenBalance, 29799.294421, 1e-6, 'newTokenBalance')
   assertEquals(tradeAction.marketCapSol, 0, 'marketCapSol')
   assert(typeof tradeAction.timestamp === 'number', "timestamp should be a number")
@@ -65,14 +65,14 @@ Deno.test("PumpPortalService.normalizeTransaction - Sell Transaction", () => {
   assertEquals(tradeAction.mint, sellRequest.mint, 'mint')
   assertEquals(tradeAction.txType, 'sell', 'txType')
   assertAlmostEquals(tradeAction.tokenAmount, 28994.417101, 1e-6, 'tokenAmount')
-  assertAlmostEquals(tradeAction.solAmount, 0.001055363, 1e-6, 'solAmount')
+  assertAlmostEquals(tradeAction.solAmount, 0.001055363, 1e-8, 'solAmount')
   assertAlmostEquals(tradeAction.feeAmount,
     0.000006 + // gas
     0.000010553 + // pump.fun trading fee
     0.000005319 - // pumpportal API fee
     0.00203928 // rent cost
     , 1e-6, 'feeAmount')
-  assertAlmostEquals(tradeAction.tradePrice, 0.001055363 / 28994.417101, 1e-6, 'tradePrice')
+  assertAlmostEquals(tradeAction.tradePrice, 0.001055363 / 28994.417101, 1e-9, 'tradePrice')
   assertAlmostEquals(tradeAction.newTokenBalance, 0, 1e-6, 'newTokenBalance')
   assertEquals(tradeAction.marketCapSol, 0, 'marketCapSol')
   assert(typeof tradeAction.timestamp === 'number', "timestamp should be a number")

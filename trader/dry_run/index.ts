@@ -6,6 +6,7 @@ import { DummyStrategy } from '@/trader/strategy/index.ts';
 import { InfluxDataFeeder } from './data_feeders/influx_feeder.ts';
 import { assert } from '@std/assert';
 import { logger } from '@/shared/utils.ts';
+import { HealthyGrowthStrategy } from '@/trader/strategy/healthy_growth_strategy.ts';
 
 Deno.test('Dry run', async () => {
   await logger.initFileLogger(`./logs/dry-run-${new Date().toISOString()}`)
@@ -25,12 +26,12 @@ Deno.test('Dry run', async () => {
   }, true)
 
   const master = new Master({
-    maxOpenPositions: 15,
-    baseBid: 0.01,
+    maxOpenPositions: 10,
+    baseBid: 0.1,
     dryRun,
     influxService,
     pumpPortal: pumpPortalService,
-    defaultStrategy: DummyStrategy,
+    defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
     priorityFee: 0.000001,
