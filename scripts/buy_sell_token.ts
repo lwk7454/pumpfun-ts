@@ -1,4 +1,4 @@
-import { PumpPortalService } from '@/trader/services/index.ts'
+import { PumpFunService } from '@/trader/services/index.ts'
 import dotenv from 'dotenv'
 import { Connection, PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
@@ -29,7 +29,7 @@ const tokenMint = "6DtTgSYQ1rtZoSWJGCziSPNFty2VU4FVECjYkxDfGhQR"
 const action = "buy"
 const solAmount = 0.01
 
-const pumpPortal = new PumpPortalService({
+const pumpPortal = new PumpFunService({
   walletSecretKey
 })
 

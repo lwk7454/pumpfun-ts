@@ -1,5 +1,5 @@
 import dotenv from 'dotenv'
-import { PumpPortalService } from '@/trader/services/index.ts'
+import { PumpFunService } from '@/trader/services/index.ts'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token"
 import { logger, wait } from '@/shared/utils.ts';
@@ -31,7 +31,7 @@ const skipTokens = [
   '7PAku7wvHd4sruRiXSo5ECTQ8GapbonaBfxvGThvpump'
 ]
 
-const pumpPortal = new PumpPortalService({
+const pumpPortal = new PumpFunService({
   walletSecretKey
 })
 

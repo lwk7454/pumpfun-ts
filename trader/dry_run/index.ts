@@ -1,8 +1,8 @@
 import { FakeTime } from "@std/testing/time"
 
 import { Master } from '@/trader/master.ts'
-import { InfluxService, PumpPortalService } from '@/trader/services/index.ts';
-import { DummyStrategy } from '@/trader/strategy/index.ts';
+import { InfluxService, PumpFunService } from '@/trader/services/index.ts';
+// import { DummyStrategy } from '@/trader/strategy/index.ts';
 import { InfluxDataFeeder } from './data_feeders/influx_feeder.ts';
 import { assert } from '@std/assert';
 import { logger } from '@/shared/utils.ts';
@@ -21,7 +21,7 @@ Deno.test('Dry run', async () => {
   
 
   const influxService = new InfluxService()
-  const pumpPortalService = new PumpPortalService({
+  const pumpPortalService = new PumpFunService({
     walletSecretKey: WALLET_SECRET,
   }, true)
 

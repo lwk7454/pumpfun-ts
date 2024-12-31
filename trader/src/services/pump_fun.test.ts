@@ -1,14 +1,14 @@
-import { PumpPortalService, PumpPortalOptions, TradeRequest } from './pump_portal.ts'
+import { PumpFunService, PumpFunOptions, TradeRequest } from './pump_fun.ts'
 import { txnBuy } from '@/mocks/txn_buy.ts'
 import { txnSell } from '@/mocks/txn_sell.ts'
 import { assert, assertAlmostEquals, assertEquals } from '@std/assert';
 import { TradeAction } from '@/trader/interfaces.ts';
 
-const options: PumpPortalOptions = {
+const options: PumpFunOptions = {
   walletSecretKey: 'your-wallet-secret-key', // Use a valid base58 secret key for testing
 }
 
-const service = new PumpPortalService(options, true) // Initialize with dryRun=true to bypass connections
+const service = new PumpFunService(options, true) // Initialize with dryRun=true to bypass connections
 
 Deno.test("PumpPortalService.normalizeTransaction - Buy Transaction", () => {
   const buyRequest: TradeRequest = {

@@ -1,7 +1,7 @@
 // master.ts
 import { logger, printSol, shorten, wait } from "@/shared/utils.ts"
 import { StrategyConstructor, TokenEvent, TradeEvent } from "@/trader/interfaces.ts"
-import { InfluxService, PumpPortalService } from "@/trader/services/index.ts"
+import { InfluxService, PumpFunService } from "@/trader/services/index.ts"
 import { HealthyGrowthStrategy } from '@/trader/strategy/index.ts'
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args"
@@ -11,7 +11,7 @@ export interface MasterConfig {
   baseBid: number
   dryRun: boolean
   influxService: InfluxService
-  pumpPortal: PumpPortalService
+  pumpPortal: PumpFunService
   defaultStrategy: StrategyConstructor
   walletPublicKey: string
   defaultSlippage: number
@@ -270,7 +270,7 @@ if (import.meta.main) {
   const WALLET_PUBLIC_KEY = Deno.env.get("PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY"
 
   const influxService = new InfluxService()
-  const pumpPortalService = new PumpPortalService({
+  const pumpPortalService = new PumpFunService({
     walletSecretKey: WALLET_SECRET,
   })
 

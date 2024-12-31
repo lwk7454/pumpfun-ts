@@ -1,4 +1,4 @@
-import { InfluxService, QueryResult } from '@/trader/services/index.ts'
+import { InfluxService } from '@/trader/services/index.ts'
 import { BaseDataFeeder } from './base_feeder.ts'
 import { TokenEvent } from '@/trader/interfaces.ts'
 

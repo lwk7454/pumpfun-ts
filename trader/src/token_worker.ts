@@ -2,7 +2,7 @@
 import { Decision, StrategyConstructor, TradeAction } from '@/trader/interfaces.ts'
 import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
-import { PumpPortalService } from "./services/pump_portal.ts"
+import { PumpFunService } from "./services/pump_fun.ts"
 import { Master } from '@/trader/master.ts'
 import { logger, shorten } from '@/shared/utils.ts'
 
@@ -14,7 +14,7 @@ export interface WorkerConfig {
   defaultSlippage: number
   priorityFee: number
   influx: InfluxService // trade bucket, not market bucket
-  pumpPortal: PumpPortalService
+  pumpPortal: PumpFunService
   dryRun: boolean
 }
 
