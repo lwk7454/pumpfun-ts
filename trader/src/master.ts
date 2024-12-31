@@ -41,8 +41,11 @@ export class Master {
   private closedTokens: Set<string> = new Set()
   private openPositions: Set<TokenWorker> = new Set()
   private lastReportTime: number = Date.now()
+  private minSolBalance: number
 
-  constructor(private config: MasterConfig) { }
+  constructor(private config: MasterConfig) {
+    this.minSolBalance = this.config.maxOpenPositions * ((this.config.baseBid * 1.01) + this.config.priorityFee + 0.00203928)
+  }
 
   // Entry point
   public async run(): Promise<void> {
@@ -179,6 +182,15 @@ export class Master {
           Traded SOL: ${printSol(report.tradedSol)} SOL,
           Open positions: ${this.openPositions.size}
         `)
+
+        // check sol balance, close all if can't open max positions
+        const balance = await this.config.pumpFun.getSolBalance()
+
+        if (balance < this.minSolBalance) {
+          logger.info("[Master] Balance is too low, closing all positions", { balance, minSolBalance: this.minSolBalance })
+          this.close()
+        }
+
         this.lastReportTime = Date.now()
       }
 
@@ -253,7 +265,7 @@ if (import.meta.main) {
     default: {
       dryRun: false,
       maxOpenPositions: "50",
-      baseBid: "0.001",
+      baseBid: "0.01",
     },
     alias: {
       dryRun: ["dry"],
@@ -284,7 +296,7 @@ if (import.meta.main) {
     defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
-    priorityFee: 0.00002,
+    priorityFee: 0.00003,
   })
 
   master.run()

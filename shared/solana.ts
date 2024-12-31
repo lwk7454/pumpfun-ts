@@ -36,15 +36,15 @@ export function getKeyPairFromPrivateKey(key: string) {
   )
 }
 
-export async function createVersionedTransaction(
-  connection: Connection,
+export function createVersionedTransaction(
+  blockhash: string,
   instructions: TransactionInstruction[],
   payer: PublicKey,
   priorityFeeInSol: number = 0,
-  addressLookupTables: AddressLookupTableAccount[] = []
-): Promise<VersionedTransaction> {
+  computeUnits: number = 60_000,
+): VersionedTransaction {
   const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-    units: 1_000_000, 
+    units: computeUnits, 
   })
 
   const transactionInstructions = [modifyComputeUnits]
@@ -59,15 +59,11 @@ export async function createVersionedTransaction(
 
   transactionInstructions.push(...instructions)
 
-  const { blockhash } = await connection.getLatestBlockhash({
-    commitment: 'processed',
-  })
-
   const messageV0 = new TransactionMessage({
     payerKey: payer,
     recentBlockhash: blockhash,
     instructions: transactionInstructions,
-  }).compileToV0Message(addressLookupTables)
+  }).compileToV0Message([])
 
   const versionedTx = new VersionedTransaction(messageV0)
   return versionedTx

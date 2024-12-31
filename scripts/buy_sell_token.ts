@@ -27,7 +27,7 @@ const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 const ownerPublicKey = new PublicKey(walletPublicKey)
 const tokenMint = "42tXBZnu4vgSAFke3PynBHgbYQQToy77q2VXNmK3pump"
-const action = "buy"
+const action = "sell"
 const solAmount = 0.01
 
 const pumpFun = new PumpFunService({
@@ -66,7 +66,7 @@ const result = await pumpFun.trade({
   solAmount: action === "buy" ? solAmount : undefined,
   tokenAmount: action !== "buy" ? await findTokenAmount(tokenMint) : undefined,
   slippage: 10,
-  priorityFee: 0.00001,
+  priorityFee: 0.00002,
 })
 
 logger.info(result)

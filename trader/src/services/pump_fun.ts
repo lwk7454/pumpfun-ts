@@ -85,12 +85,13 @@ export class PumpFunService {
     request: TradeRequest,
     tx: ParsedTransactionWithMeta,
   ): TradeAction {
+    const publicKey = this.keypair!.publicKey.toBase58()
     const solChange =
       ((tx.meta?.postBalances?.[0] ?? 0) - (tx.meta?.preBalances?.[0] ?? 0)) / 1e9
     const preToken =
-      tx.meta?.preTokenBalances?.find((b) => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0
+      tx.meta?.preTokenBalances?.find((b) => b.owner === publicKey)?.uiTokenAmount.uiAmount || 0
     const postToken =
-      tx.meta?.postTokenBalances?.find((b) => b.accountIndex === 1)?.uiTokenAmount.uiAmount || 0
+      tx.meta?.postTokenBalances?.find((b) => b.owner === publicKey)?.uiTokenAmount.uiAmount || 0
     const tokenChange = postToken - preToken
 
     const gas = (tx.meta?.fee ?? 0) / 1e9
@@ -134,13 +135,13 @@ export class PumpFunService {
           skipPreflight: true,
         }),
         [
-          this.connections.chainstack,
           this.connections.quicknode,
           this.connections.solana,
           this.connections.solanatracker,
+          this.connections.chainstack,
         ],
       )
-      console.log(`[PumpPortalService] Transaction sent in ${Date.now() - t}ms`)
+      logger.info(`[PumpPortalService] Transaction sent in ${Date.now() - t}ms`)
     } catch (err: unknown) {
       const message = (err as Error).message?.toLowerCase() || ''
       // Check if it's specifically a "preflight simulation" error
@@ -169,30 +170,32 @@ export class PumpFunService {
       const latestBlockhash = await callWithConnectionList(
         (connection) => connection.getLatestBlockhash('processed'),
         [
-          this.connections.chainstack,
           this.connections.quicknode,
-          this.connections.solana,
           this.connections.solanatracker,
+          this.connections.solana,
+          this.connections.chainstack,
           this.connections.drpc,
         ],
       )
-      console.log(`[PumpPortalService] Latest blockhash in ${Date.now() - t1}ms`)
+      logger.info(`[PumpPortalService] Latest blockhash in ${Date.now() - t1}ms`)
       const confirmationStrategy = {
         signature,
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
       }
+      logger.info({ confirmationStrategy })
+      
       const t2 = Date.now()
       const confirmation = await callWithConnectionList(
         (connection) => connection.confirmTransaction(confirmationStrategy),
         [
+          this.connections.solanatracker,
           this.connections.quicknode,
           this.connections.solana,
           this.connections.chainstack,
-          this.connections.solanatracker,
         ],
       )
-      console.log(`[PumpPortalService] Transaction confirmed in ${Date.now() - t2}ms`)
+      logger.info(`[PumpPortalService] Transaction confirmed in ${Date.now() - t2}ms`)
       if (confirmation.value.err) {
         throw new Error("Transaction failure on Solana chain")
       }
@@ -246,7 +249,6 @@ export class PumpFunService {
     if (!coinData) {
       throw new Error('Failed to retrieve coin data.')
     }
-    logger.info({ coinData })
 
     const payer = this.keypair!
     const owner = payer.publicKey
@@ -322,18 +324,9 @@ export class PumpFunService {
     })
     txBuilder.add(instruction)
 
-    const transaction = await callWithConnectionList(
-      (connection) => createVersionedTransaction(connection, txBuilder.instructions, payer.publicKey, priorityFee),
-      [
-        this.connections.quicknode,
-        this.connections.solana,
-        this.connections.chainstack,
-        this.connections.solanatracker,
-      ],
-    )
-
+    const blockhash = await this.getBlockHashFromPumpPortal(request)
+    const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 60_000)
     transaction.sign([payer])
-
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
     return this.normalizeTransaction(request, txn)
   }
@@ -451,20 +444,44 @@ export class PumpFunService {
       }
     }
 
-    const transaction = await callWithConnectionList(
-      (connection) => createVersionedTransaction(connection, txBuilder.instructions, payer.publicKey, priorityFee),
-      [
-        this.connections.solana,
-        this.connections.quicknode,
-        this.connections.chainstack,
-        // this.connections.solanatracker,
-      ],
-    )
-
+    const blockhash = await this.getBlockHashFromPumpPortal(request)
+    const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 40_000)
     transaction.sign([payer])
-
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
     return this.normalizeTransaction(request, txn)
+  }
+
+  async getSolBalance(): Promise<number> {
+    const balance = await this.connections.quicknode.getBalance(this.keypair!.publicKey)
+    return balance / LAMPORTS_PER_SOL
+  }
+
+  async getBlockHashFromPumpPortal(request: TradeRequest) {
+    const response = await fetch(`https://pumpportal.fun/api/trade-local`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        "publicKey": this.keypair!.publicKey.toBase58(),
+        "action": request.action,
+        "mint": request.mint,
+        "denominatedInSol": request.action === "buy" ? "true" : "false",
+        "amount": request.action === "buy" ? request.solAmount : request.tokenAmount,
+        "slippage": request.slippage,
+        "priorityFee": request.priorityFee,
+        "pool": "pump"
+      })
+    })
+
+    if (response.status === 200) {
+      const data = await response.arrayBuffer()
+      const tx = VersionedTransaction.deserialize(new Uint8Array(data))
+      return tx.message.recentBlockhash
+    } else {
+      logger.error("PumpPortal error", { status: response.status, statusText: response.statusText, body: await response.text() })
+      throw new Error("Failed to get block hash from pump portal")
+    }
   }
 }
 
