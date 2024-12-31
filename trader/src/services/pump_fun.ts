@@ -132,7 +132,7 @@ export class PumpFunService {
       const t = Date.now()
       signature = await callWithConnectionList(
         (connection) => connection.sendTransaction(tx, {
-          skipPreflight: true,
+          skipPreflight: false,
         }),
         [
           this.connections.quicknode,
@@ -189,8 +189,8 @@ export class PumpFunService {
       const confirmation = await callWithConnectionList(
         (connection) => connection.confirmTransaction(confirmationStrategy),
         [
-          this.connections.solanatracker,
           this.connections.quicknode,
+          this.connections.solanatracker,
           this.connections.solana,
           this.connections.chainstack,
         ],
@@ -217,8 +217,8 @@ export class PumpFunService {
           return txn
         },
         [
-          this.connections.quicknode,
           this.connections.solanatracker,
+          this.connections.quicknode,
           this.connections.solana,
           this.connections.drpc,
           this.connections.ankr,
@@ -325,7 +325,7 @@ export class PumpFunService {
     txBuilder.add(instruction)
 
     const blockhash = await this.getBlockHashFromPumpPortal(request)
-    const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 60_000)
+    const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 80_000)
     transaction.sign([payer])
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
     return this.normalizeTransaction(request, txn)
@@ -445,7 +445,7 @@ export class PumpFunService {
     }
 
     const blockhash = await this.getBlockHashFromPumpPortal(request)
-    const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 40_000)
+    const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 60_000)
     transaction.sign([payer])
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
     return this.normalizeTransaction(request, txn)
@@ -467,7 +467,7 @@ export class PumpFunService {
         "action": request.action,
         "mint": request.mint,
         "denominatedInSol": request.action === "buy" ? "true" : "false",
-        "amount": request.action === "buy" ? request.solAmount : request.tokenAmount,
+        "amount": (request.action === "buy" ? request.solAmount : request.tokenAmount) || 0.01,
         "slippage": request.slippage,
         "priorityFee": request.priorityFee,
         "pool": "pump"

@@ -26,7 +26,7 @@ addEventListener("error", (event) => {
 const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 const ownerPublicKey = new PublicKey(walletPublicKey)
-const tokenMint = "42tXBZnu4vgSAFke3PynBHgbYQQToy77q2VXNmK3pump"
+const tokenMint = "Cqyjee7Y74rqkkeNEvYKWJvAo3R8JzS4WHNJ1BPqpump"
 const action = "sell"
 const solAmount = 0.01
 
@@ -42,10 +42,6 @@ const findTokenAmount = async (tokenMint: string) => {
   )
   // find token amount in tokenAccounts
   const tokenAccount = tokenAccounts.value.find(({ account }) => {
-
-    logger.info({
-      account: account.data.parsed.info,
-    })
     const parsedInfo = account.data.parsed.info
     return parsedInfo.mint === tokenMint
   })

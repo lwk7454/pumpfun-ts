@@ -42,9 +42,11 @@ export class Master {
   private openPositions: Set<TokenWorker> = new Set()
   private lastReportTime: number = Date.now()
   private minSolBalance: number
+  private currentBid: number
 
   constructor(private config: MasterConfig) {
     this.minSolBalance = this.config.maxOpenPositions * ((this.config.baseBid * 1.01) + this.config.priorityFee + 0.00203928)
+    this.currentBid = this.config.baseBid
   }
 
   // Entry point
@@ -71,6 +73,7 @@ export class Master {
     logger.info(
       `[Master] Final Report: 
         Profit: ${printSol(report.solDelta)} SOL,
+        Current Bid: ${printSol(this.currentBid)} SOL,
         Subscribed tokens: ${this.subscribedTokens.size}, 
         Traded tokens: ${report.tradedTokenCount},
         Fee: ${printSol(report.feeTotal)} SOL,
@@ -166,6 +169,7 @@ export class Master {
   }
 
   private async heartBeat() {
+    let bidRatio: number = 0
     while (this.isRunning) {
       this.activeWorkers.forEach((worker) => {
         worker.enqueueCommand({ type: "heartbeat" })
@@ -175,7 +179,8 @@ export class Master {
         const report = this.generateReport()
         logger.info(
           `[Master] Report 
-          profit: ${printSol(report.solDelta)} SOL, 
+          Profit: ${printSol(report.solDelta)} SOL, 
+          Current Bid: ${printSol(this.currentBid)} SOL,
           Subscribed tokens: ${this.subscribedTokens.size}, 
           Traded tokens: ${report.tradedTokenCount},
           Fee: ${printSol(report.feeTotal)} SOL,
@@ -185,6 +190,11 @@ export class Master {
 
         // check sol balance, close all if can't open max positions
         const balance = await this.config.pumpFun.getSolBalance()
+        if (bidRatio === 0) {
+          bidRatio = this.config.baseBid / balance
+        }
+
+        this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
 
         if (balance < this.minSolBalance) {
           logger.info("[Master] Balance is too low, closing all positions", { balance, minSolBalance: this.minSolBalance })
@@ -215,13 +225,13 @@ export class Master {
     const { mint } = event
     const {
       defaultStrategy, walletPublicKey, defaultSlippage,
-      priorityFee, influxService, pumpFun, dryRun, baseBid
+      priorityFee, influxService, pumpFun, dryRun
     } = this.config
 
     const worker = new TokenWorker({
       initEvent: event,
       strategy: defaultStrategy,
-      baseBid,
+      baseBid: this.currentBid,
       traderAddress: walletPublicKey,
       defaultSlippage,
       priorityFee,
@@ -295,8 +305,8 @@ if (import.meta.main) {
     // defaultStrategy: DummyStrategy,
     defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 10,
-    priorityFee: 0.00003,
+    defaultSlippage: 50,
+    priorityFee: 0.00002,
   })
 
   master.run()
