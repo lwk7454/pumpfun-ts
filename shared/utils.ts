@@ -41,4 +41,34 @@ export async function fetchWithRetry(url: string, options: RequestInit, maxRetri
   throw new Error(`fetchWithRetry failed after ${maxRetries} attempts. Last error: ${lastError}`)
 }
 
+export async function fetchWithProxy(url: string, options: RequestInit): Promise<string> {
+  const proxyUrl = "https://realtime.oxylabs.io/v1/queries"
+  const auth = Deno.env.get("OXYLABS_AUTH")
+  if (!auth) {
+    throw new Error("OXYLABS_AUTH is not set")
+  }
+  const data = {
+    source: "universal",
+    url
+  }
+
+  const response = await fetch(proxyUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Basic ${btoa(auth)}`,
+      ...options.headers
+    },
+    body: JSON.stringify(data)
+  })
+
+  if (response.ok) {
+    const result = await response.json()
+    return result['results'][0]['content']
+  } else {
+    throw new Error(`Proxy error: ${response.status} ${response.statusText}`)
+  }
+
+}
+
 export const logger = new Logger()

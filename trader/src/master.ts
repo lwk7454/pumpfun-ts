@@ -306,7 +306,7 @@ if (import.meta.main) {
     defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 50,
-    priorityFee: 0.00002,
+    priorityFee: 0.00006,
   })
 
   master.run()

@@ -76,7 +76,7 @@ for (const balance of balances) {
   // continue;
 
   if (skipTokens.includes(balance.mintAddress)) continue
-  await wait(0.3)
+  await wait(1)
   promises.push(pumpFun.trade({
     publicKey: walletPublicKey,
     action: "sell",

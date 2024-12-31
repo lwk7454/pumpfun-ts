@@ -156,6 +156,11 @@ export class TokenWorker {
     }
   }
 
+  private getPrice() {
+    const lastEvent = this.events.at(-1)!
+    return lastEvent.solAmount / lastEvent.tokenAmount
+  }
+
   private async buyToken(solAmount: number): Promise<TradeAction | null> {
     if (this.config.dryRun) {
 
@@ -186,6 +191,7 @@ export class TokenWorker {
         solAmount,
         slippage: this.config.defaultSlippage,
         priorityFee: this.config.priorityFee,
+        price: this.getPrice(),
       })
 
       logger.info(`[TokenWorker] BUY transaction successful: `, result)
@@ -205,7 +211,7 @@ export class TokenWorker {
       return result
     } catch (err) {
       const message = (err as Error).message?.toLowerCase() || ''
-      if (message.includes("raydium token")) {
+      if (message.includes("raydium token") || message.includes("bonding curve has completed")) {
         logger.error("[TokenWorker] Closing Raydium token", { mint: this.tokenMint })
         this.handleDecision({ action: "close" })
       } else if (message.includes("preflight simulation")) {
@@ -216,6 +222,7 @@ export class TokenWorker {
         this.handleDecision({ action: "close" })
       } else {
         logger.error(`[TokenWorker] Failed to BUY ${shorten(this.tokenMint)}:`, err)
+        this.handleDecision({ action: "close" }) // should we close for unknown error?
       }
       return null
     }
@@ -252,6 +259,7 @@ export class TokenWorker {
         tokenAmount,
         slippage: this.config.defaultSlippage,
         priorityFee: this.config.priorityFee,
+        price: this.getPrice(),
       })
 
       logger.info(`[TokenWorker] SELL transaction successful: `, result)
@@ -270,12 +278,20 @@ export class TokenWorker {
       })
       return result
     } catch (err) {
-      logger.error(`[TokenWorker] Failed to SELL ${shorten(this.tokenMint)}:`, err)
+      const message = (err as Error).message?.toLowerCase() || ''
 
       // if transaction simulation failed, close this worker
-      if (err instanceof Error && err.message?.toLowerCase()?.includes("preflight simulation")) {
-        logger.info(`[TokenWorker] Closing worker because unable to sell`, { mint: this.tokenMint })
+      if (message.includes("preflight simulation")) {
+        logger.warn(`[TokenWorker] Closing worker because unable to sell`, { mint: this.tokenMint })
         this.handleDecision({ action: "close" })
+      } else if (message.includes("bonding curve has completed")) {
+        logger.warn(`[TokenWorker] Bonding curve has completed`, { mint: this.tokenMint })
+        this.handleDecision({ action: "close" })
+      } else if (message.includes("token account not found")) {
+        this.handleDecision({ action: "close" })
+      } else {
+        logger.error(`[TokenWorker] Failed to SELL ${shorten(this.tokenMint)}:`, err)
+        this.handleDecision({ action: "close" }) // should we close for unknown error?
       }
 
       return null

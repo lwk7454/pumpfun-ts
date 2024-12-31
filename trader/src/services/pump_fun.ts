@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { callWithConnectionList } from '@/shared/solana.ts'
-import { logger } from '@/shared/utils.ts'
+import { fetchWithProxy, logger } from '@/shared/utils.ts'
 import { TradeAction } from '@/trader/interfaces.ts'
 import {
   Connection,
@@ -34,6 +34,7 @@ export interface TradeRequest {
   mint: string
   solAmount?: number
   tokenAmount?: number
+  price?: number
   slippage: number
   priorityFee: number
 }
@@ -41,6 +42,13 @@ export interface TradeRequest {
 export enum TransactionMode {
   Simulation,
   Execution
+}
+
+export interface CoinData {
+  bonding_curve: string
+  associated_bonding_curve: string
+  virtual_token_reserves: number
+  virtual_sol_reserves: number
 }
 
 export const GLOBAL = new PublicKey("4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf")
@@ -55,6 +63,7 @@ export const SYSTEM_PROGRAM_ID = SystemProgram.programId
 export class PumpFunService {
   private connections: Record<string, Connection> = {}
   private keypair: Keypair | null = null
+  private coinData: CoinData | null = null
 
   constructor(private options: PumpFunOptions, dryRun = false) {
     if (dryRun) return
@@ -183,7 +192,6 @@ export class PumpFunService {
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
       }
-      logger.info({ confirmationStrategy })
       
       const t2 = Date.now()
       const confirmation = await callWithConnectionList(
@@ -245,9 +253,8 @@ export class PumpFunService {
     }
 
     const mint = new PublicKey(mintStr)
-    const coinData = await getCoinData(mintStr)
-    if (!coinData) {
-      throw new Error('Failed to retrieve coin data.')
+    if (!this.coinData) {
+      this.coinData = await getCoinData(mintStr)
     }
 
     const payer = this.keypair!
@@ -287,14 +294,19 @@ export class PumpFunService {
     }
 
     const solInLamports = solAmount! * LAMPORTS_PER_SOL
-    const tokenOut = Math.floor(solInLamports * coinData["virtual_token_reserves"] / coinData["virtual_sol_reserves"])
+    let price = request.price
+    if (!price) {
+      this.coinData = await getCoinData(mintStr)
+      price = this.coinData.virtual_sol_reserves / this.coinData.virtual_token_reserves
+    }
+    const tokenOut = Math.floor(solInLamports / price)
 
     const solInWithSlippage = solAmount! * (1 + (slippage / 100))
     const maxSolCost = Math.floor(solInWithSlippage * LAMPORTS_PER_SOL)
     const ASSOCIATED_USER = tokenAccount
     const USER = owner
-    const BONDING_CURVE = new PublicKey(coinData['bonding_curve'])
-    const ASSOCIATED_BONDING_CURVE = new PublicKey(coinData['associated_bonding_curve'])
+    const BONDING_CURVE = new PublicKey(this.coinData['bonding_curve'])
+    const ASSOCIATED_BONDING_CURVE = new PublicKey(this.coinData['associated_bonding_curve'])
 
     const keys: AccountMeta[] = [
       { pubkey: GLOBAL, isSigner: false, isWritable: false },
@@ -347,9 +359,9 @@ export class PumpFunService {
 
 
     const mint = new PublicKey(mintStr)
-    const coinData = await getCoinData(mintStr)
-    if (!coinData) {
-      throw new Error("Failed to retrieve coin data...")
+
+    if (!this.coinData) {
+      this.coinData = await getCoinData(mintStr)
     }
 
     const payer = this.keypair!
@@ -379,7 +391,7 @@ export class PumpFunService {
     const parsedTokenInfo = tokenAccount.account.data.parsed.info
     const { amount: tokenBalanceString, decimals: tokenDecimals } = parsedTokenInfo.tokenAmount
     const tokenBalance = Number(tokenBalanceString)
-    const tokenAmountRaw = tokenAmount * 10 ** tokenDecimals
+    const tokenAmountRaw = Math.floor(tokenAmount * 10 ** tokenDecimals)
     logger.info({
       tokenBalance,
       tokenAmountRaw,
@@ -387,10 +399,14 @@ export class PumpFunService {
 
     // Calculate minimum SOL output based on slippage
     const slippageDecimal = slippage / 100
+    let price = request.price
+    if (!price) {
+      this.coinData = await getCoinData(mintStr)
+      price = this.coinData.virtual_sol_reserves / this.coinData.virtual_token_reserves
+    }
     const minSolOutput = Math.floor(
-      tokenAmountRaw * (1 - slippageDecimal) * coinData["virtual_sol_reserves"] / coinData["virtual_token_reserves"]
+      tokenAmountRaw * (1 - slippageDecimal) * price
     )
-
 
     const txBuilder = new Transaction()
 
@@ -408,8 +424,8 @@ export class PumpFunService {
         { pubkey: GLOBAL, isSigner: false, isWritable: false },
         { pubkey: FEE_RECIPIENT, isSigner: false, isWritable: true },
         { pubkey: mint, isSigner: false, isWritable: false },
-        { pubkey: new PublicKey(coinData['bonding_curve']), isSigner: false, isWritable: true },
-        { pubkey: new PublicKey(coinData['associated_bonding_curve']), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(this.coinData.bonding_curve), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(this.coinData.associated_bonding_curve), isSigner: false, isWritable: true },
         { pubkey: tokenAccount.pubkey, isSigner: false, isWritable: true },
         { pubkey: owner, isSigner: false, isWritable: true },
         { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
@@ -485,13 +501,11 @@ export class PumpFunService {
   }
 }
 
-export async function getCoinData(mintStr: string) {
+export async function getCoinData(mintStr: string): Promise<CoinData> {
   try {
     const url = `https://frontend-api.pump.fun/coins/${mintStr}`
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-        "Accept": "*/*",
         "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "gzip, deflate, br",
         "Referer": "https://www.pump.fun/",
@@ -500,21 +514,25 @@ export async function getCoinData(mintStr: string) {
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "cross-site",
-        "If-None-Match": 'W/"43a-tWaCcS4XujSi30IFlxDCJYxkMKg"'
       }
     })
 
     // Check if the response is OK (status in 200–299 range)
     if (!response.ok) {
-      logger.error(`Failed to retrieve coin data: ${response.status} ${response.statusText}`)
-      return null
+      if (response.status === 429 || response.statusText.toLocaleLowerCase().includes("too many requests")) {
+        const proxyResponse = await fetchWithProxy(url, { headers: response.headers })
+        const data = await JSON.parse(proxyResponse) as CoinData
+        return data
+      } else {
+        logger.error(`Failed to retrieve coin data: ${response.status} ${response.statusText}`)
+        throw new Error("Failed to retrieve coin data")
+      }
+    } else {
+      const data = await response.json() as CoinData
+      return data
     }
-
-    // Parse and return JSON
-    const data = await response.json()
-    return data
   } catch (error) {
     logger.error("Error fetching coin data:", error)
-    return null
+    throw new Error("Failed to retrieve coin data")
   }
 }
