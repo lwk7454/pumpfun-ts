@@ -21,6 +21,9 @@ export interface MasterConfig {
 export type MasterResult = {
   solDelta: number
   tokenDelta: number
+  tradedTokenCount: number
+  feeTotal: number
+  tradedSol: number
 }
 
 /**
@@ -62,19 +65,37 @@ export class Master {
     this.isRunning = false
 
     const report = this.generateReport()
-    logger.info(`[Master] Final Report: ${printSol(report.solDelta)} SOL`)
+    logger.info(
+      `[Master] Final Report: 
+        Profit: ${printSol(report.solDelta)} SOL,
+        Subscribed tokens: ${this.subscribedTokens.size}, 
+        Traded tokens: ${report.tradedTokenCount},
+        Fee: ${printSol(report.feeTotal)} SOL,
+        Traded SOL: ${printSol(report.tradedSol)} SOL,
+        Open positions: ${this.openPositions.size}
+      `)
   }
 
   private generateReport(): MasterResult {
     let solDelta = 0
     let tokenDelta = 0
+    let feeTotal = 0
+    let tradedSol = 0
     this.workerResults.forEach(result => {
       if (!isNaN(result.solDelta) && !isNaN(result.tokenDelta)) {
         solDelta += result.solDelta
         tokenDelta += result.tokenDelta
+        feeTotal += result.feeTotal
+        tradedSol += result.tradedSol
       }
     })
-    return { solDelta, tokenDelta }
+    return {
+      solDelta,
+      tokenDelta,
+      tradedTokenCount: this.workerResults.length,
+      feeTotal,
+      tradedSol,
+    }
   }
 
   private runLive() {
@@ -147,9 +168,17 @@ export class Master {
         worker.enqueueCommand({ type: "heartbeat" })
       })
 
-      if (Date.now() - this.lastReportTime > 1000 * 5) {
+      if (Date.now() - this.lastReportTime > 1000 * 10) {
         const report = this.generateReport()
-        logger.info(`[Master] Report profit: ${printSol(report.solDelta)} SOL, Subscribed tokens: ${this.subscribedTokens.size}, Open positions: ${this.openPositions.size}`)
+        logger.info(
+          `[Master] Report 
+          profit: ${printSol(report.solDelta)} SOL, 
+          Subscribed tokens: ${this.subscribedTokens.size}, 
+          Traded tokens: ${report.tradedTokenCount},
+          Fee: ${printSol(report.feeTotal)} SOL,
+          Traded SOL: ${printSol(report.tradedSol)} SOL,
+          Open positions: ${this.openPositions.size}
+        `)
         this.lastReportTime = Date.now()
       }
 

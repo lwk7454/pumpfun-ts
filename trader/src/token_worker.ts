@@ -29,6 +29,8 @@ export type WorkerResult = {
   mint: string
   solDelta: number
   tokenDelta: number
+  feeTotal: number
+  tradedSol: number
 }
 
 export class TokenWorker {
@@ -135,16 +137,22 @@ export class TokenWorker {
   private generateReport(): WorkerResult {
     let solDelta = 0
     let tokenDelta = 0
+    let feeTotal = 0
+    let tradedSol = 0
     this.actions.forEach(action => {
       // logger.info(`[TokenWorker] Token: ${this.tokenMint} Action: ${action.txType} Token: ${action.tokenAmount} Sol: ${action.solAmount} Fee: ${action.feeAmount}`)
       solDelta += (action.txType === "buy" ? -action.solAmount : action.solAmount) - action.feeAmount
       tokenDelta += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
+      feeTotal += action.feeAmount
+      tradedSol += action.solAmount
     })
 
     return {
       mint: this.tokenMint,
       solDelta,
       tokenDelta,
+      feeTotal,
+      tradedSol,
     }
   }
 
@@ -153,8 +161,8 @@ export class TokenWorker {
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
-      const gasCost = 0.000006 // TODO: get from config
-      const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
+      const gasCost = 0.000015 // TODO: get from config
+      const fees = solAmount * 0.01 + this.config.priorityFee + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {
@@ -222,7 +230,7 @@ export class TokenWorker {
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const solAmount = tokenAmount * lastPrice
       const gasCost = 0.000006 // TODO: get from config
-      const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
+      const fees = solAmount * 0.01 + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {

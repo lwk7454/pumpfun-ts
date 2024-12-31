@@ -11,12 +11,12 @@ export class HealthyGrowthStrategy extends Strategy {
 
   LOSS_THRESHOLD = 0.9
   PROFIT_THRESHOLD = 1.2
-  GROWTH_RATE_LOWER_BOUND = 0.5 // %
-  GROWTH_RATE_UPPER_BOUND = 10 // %
+  GROWTH_RATE_LOWER_BOUND = 5 // %
+  GROWTH_RATE_UPPER_BOUND = 30 // %
   TIMEOUT = 1000 * 120
-  VOLATILITY_UPPER_BOUND = 2 // standard deviation
-  GRACE_PERIOD = 1000 * 30 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 30 // milliseconds
+  VOLATILITY_UPPER_BOUND = 2 // coefficient variance
+  GRACE_PERIOD = 1000 * 120 // milliseconds
+  LOOKBACK_PERIOD = 1000 * 60 // milliseconds
 
   private isBought: boolean = false
   private isSold: boolean = false
@@ -81,7 +81,7 @@ export class HealthyGrowthStrategy extends Strategy {
     const prices = data.map(record => this.getPrice(record))
     const mean = prices.reduce((a, b) => a + b) / prices.length
     const variance = prices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / prices.length
-    return Math.sqrt(variance)
+    return Math.sqrt(variance) / mean
   }
 
   onMarketCapUpdate(_event: TokenEvent): Decision {

@@ -26,8 +26,8 @@ Deno.test('Dry run', async () => {
   }, true)
 
   const master = new Master({
-    maxOpenPositions: 10,
-    baseBid: 0.1,
+    maxOpenPositions: 50,
+    baseBid: 0.01,
     dryRun,
     influxService,
     pumpPortal: pumpPortalService,
