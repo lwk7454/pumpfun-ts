@@ -162,7 +162,7 @@ export class TokenWorker {
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const gasCost = 0.000015 // TODO: get from config
-      const fees = solAmount * 0.01 + this.config.priorityFee + gasCost
+      const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {
@@ -230,7 +230,7 @@ export class TokenWorker {
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const solAmount = tokenAmount * lastPrice
       const gasCost = 0.000006 // TODO: get from config
-      const fees = solAmount * 0.01 + gasCost
+      const fees = solAmount * 0.015 + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {

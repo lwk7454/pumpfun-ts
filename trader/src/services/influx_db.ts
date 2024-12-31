@@ -79,7 +79,6 @@ export class InfluxService {
         lastTime = rows.at(-1)!._time
         yield page
       } else {
-        logger.info('No more pages: ', { page, pageSize })
         hasMore = false
       }
     }
@@ -117,6 +116,14 @@ export class InfluxService {
     }
     logger.info('Results: ', {results})
     return results
+  }
+
+  async fetchAllRecordsBrute<T extends Record<string, unknown>>(
+    fluxQuery: string,
+  ): Promise<Array<QueryResult<T>>> {
+    const records = await this.queryApi.collectRows<QueryResult<T>>(`from(bucket: "${this.bucket}")` + fluxQuery)
+
+    return records
   }
 
   /**

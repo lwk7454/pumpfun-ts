@@ -1,6 +1,6 @@
-import { InfluxService } from '@/trader/services/index.ts';
-import { BaseDataFeeder } from './base_feeder.ts';
-import { TokenEvent } from '@/trader/interfaces.ts';
+import { InfluxService, QueryResult } from '@/trader/services/index.ts'
+import { BaseDataFeeder } from './base_feeder.ts'
+import { TokenEvent } from '@/trader/interfaces.ts'
 
 type InfluxRecord = {
   mint: string
@@ -20,20 +20,27 @@ export class InfluxDataFeeder extends BaseDataFeeder {
   }
 
   async *nextEvent(): AsyncGenerator<TokenEvent> {
-    const recordPages = this.influxService.paginateQuery<InfluxRecord>({
-      fluxQuery: `
-        |> range(start: ${this.startDate.toISOString()}, stop: ${this.endDate.toISOString()})
+    let binStart = new Date(this.startDate.getTime())
+
+    while (binStart < this.endDate) {
+      const binEnd = new Date(
+        Math.min(
+          binStart.getTime() + 20 * 60 * 1000, // +20 minutes
+          this.endDate.getTime()
+        )
+      )
+
+      const fluxQuery = `
+        |> range(start: ${binStart.toISOString()}, stop: ${binEnd.toISOString()})
         |> filter(fn: (r) => r._measurement == "market_data")
         |> pivot(rowKey:["_time", "mint"], columnKey: ["_field"], valueColumn: "_value")
         |> filter(fn: (r) => r.market_cap_sol > 0 and r.tx_type != "create")
         |> group()
         |> sort(columns: ["_time"], desc: false)
-      `,
-      pageSize: 10000,
-    })
+      `
+      const records = await this.influxService.fetchAllRecordsBrute<InfluxRecord>(fluxQuery)
 
-    for await (const page of recordPages) {
-      for (const record of page) {
+      for (const record of records) {
         yield {
           mint: record.mint,
           txType: record.tx_type,
@@ -43,6 +50,8 @@ export class InfluxDataFeeder extends BaseDataFeeder {
           timestamp: new Date(record._time).getTime(),
         }
       }
+      binStart = binEnd
     }
   }
+
 }
