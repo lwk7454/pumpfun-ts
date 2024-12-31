@@ -14,7 +14,7 @@ export interface WorkerConfig {
   defaultSlippage: number
   priorityFee: number
   influx: InfluxService // trade bucket, not market bucket
-  pumpPortal: PumpFunService
+  pumpFun: PumpFunService
   dryRun: boolean
 }
 
@@ -179,15 +179,13 @@ export class TokenWorker {
     }
 
     try {
-      const result = await this.config.pumpPortal.trade({
+      const result = await this.config.pumpFun.trade({
         publicKey: this.config.traderAddress,
         action: "buy",
         mint: this.tokenMint,
-        denominatedInSol: "true",
-        amount: solAmount,
+        solAmount,
         slippage: this.config.defaultSlippage,
         priorityFee: this.config.priorityFee,
-        pool: "pump",
       })
 
       logger.info(`[TokenWorker] BUY transaction successful: `, result)
@@ -247,15 +245,13 @@ export class TokenWorker {
     }
 
     try {
-      const result = await this.config.pumpPortal.trade({
+      const result = await this.config.pumpFun.trade({
         publicKey: this.config.traderAddress,
         action: "sell",
         mint: this.tokenMint,
-        denominatedInSol: "false",
-        amount: tokenAmount,
+        tokenAmount,
         slippage: this.config.defaultSlippage,
         priorityFee: this.config.priorityFee,
-        pool: "pump",
       })
 
       logger.info(`[TokenWorker] SELL transaction successful: `, result)

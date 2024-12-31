@@ -21,7 +21,7 @@ Deno.test('Dry run', async () => {
   
 
   const influxService = new InfluxService()
-  const pumpPortalService = new PumpFunService({
+  const pumpFun = new PumpFunService({
     walletSecretKey: WALLET_SECRET,
   }, true)
 
@@ -30,7 +30,7 @@ Deno.test('Dry run', async () => {
     baseBid: 0.01,
     dryRun,
     influxService,
-    pumpPortal: pumpPortalService,
+    pumpFun: pumpFun,
     defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,

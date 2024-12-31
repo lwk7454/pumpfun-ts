@@ -11,7 +11,7 @@ export interface MasterConfig {
   baseBid: number
   dryRun: boolean
   influxService: InfluxService
-  pumpPortal: PumpFunService
+  pumpFun: PumpFunService
   defaultStrategy: StrategyConstructor
   walletPublicKey: string
   defaultSlippage: number
@@ -203,7 +203,7 @@ export class Master {
     const { mint } = event
     const {
       defaultStrategy, walletPublicKey, defaultSlippage,
-      priorityFee, influxService, pumpPortal, dryRun, baseBid
+      priorityFee, influxService, pumpFun, dryRun, baseBid
     } = this.config
 
     const worker = new TokenWorker({
@@ -214,7 +214,7 @@ export class Master {
       defaultSlippage,
       priorityFee,
       influx: influxService,
-      pumpPortal,
+      pumpFun,
       dryRun,
     }, this)
 
@@ -252,8 +252,8 @@ if (import.meta.main) {
     string: ["maxOpenPositions", "baseBid"],
     default: {
       dryRun: false,
-      maxOpenPositions: "10",
-      baseBid: "0.005",
+      maxOpenPositions: "50",
+      baseBid: "0.001",
     },
     alias: {
       dryRun: ["dry"],
@@ -270,7 +270,7 @@ if (import.meta.main) {
   const WALLET_PUBLIC_KEY = Deno.env.get("PUBLIC_KEY") || "YOUR_WALLET_PUBLIC_KEY"
 
   const influxService = new InfluxService()
-  const pumpPortalService = new PumpFunService({
+  const pumpFun = new PumpFunService({
     walletSecretKey: WALLET_SECRET,
   })
 
@@ -279,12 +279,12 @@ if (import.meta.main) {
     baseBid,
     dryRun,
     influxService,
-    pumpPortal: pumpPortalService,
+    pumpFun: pumpFun,
     // defaultStrategy: DummyStrategy,
     defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 10,
-    priorityFee: 0.00001,
+    priorityFee: 0.00002,
   })
 
   master.run()

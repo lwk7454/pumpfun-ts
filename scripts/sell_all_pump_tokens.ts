@@ -31,7 +31,7 @@ const skipTokens = [
   '7PAku7wvHd4sruRiXSo5ECTQ8GapbonaBfxvGThvpump'
 ]
 
-const pumpPortal = new PumpFunService({
+const pumpFun = new PumpFunService({
   walletSecretKey
 })
 
@@ -72,17 +72,18 @@ const balances = tokenAccounts.value.map(({ pubkey, account }) => {
 const promises = []
 
 for (const balance of balances) {
+  // logger.info(balance)
+  // continue;
+
   if (skipTokens.includes(balance.mintAddress)) continue
   await wait(0.3)
-  promises.push(pumpPortal.trade({
+  promises.push(pumpFun.trade({
     publicKey: walletPublicKey,
     action: "sell",
     mint: balance.mintAddress,
-    denominatedInSol: "false",
-    amount: balance.balance,
+    tokenAmount: balance.balance,
     slippage: 10,
     priorityFee: 0.000001,
-    pool: "pump",
   }))
 
 }

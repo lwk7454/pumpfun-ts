@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer'
-import { callWithConnectionList, getKeyPairFromPrivateKey } from '@/shared/solana.ts'
+import { callWithConnectionList } from '@/shared/solana.ts'
 import { logger } from '@/shared/utils.ts'
 import { TradeAction } from '@/trader/interfaces.ts'
 import {
@@ -12,12 +12,17 @@ import {
   SystemProgram,
 } from '@solana/web3.js'
 import bs58 from 'bs58'
-import { createAssociatedTokenAccountInstruction, getAssociatedTokenAddress } from '@solana/spl-token'
+import {
+  createAssociatedTokenAccountInstruction,
+  getAssociatedTokenAddress,
+  createCloseAccountInstruction
+} from '@solana/spl-token'
 import { Transaction } from '@solana/web3.js'
 import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { bufferFromUInt64 } from '@/shared/solana.ts'
 import { TransactionInstruction } from '@solana/web3.js'
 import { createVersionedTransaction } from '@/shared/solana.ts'
+import { AccountMeta } from '@solana/web3.js';
 
 export interface PumpFunOptions {
   walletSecretKey: string   // Base58 string or other secure format
@@ -27,11 +32,10 @@ export interface TradeRequest {
   publicKey: string
   action: "buy" | "sell"
   mint: string
-  denominatedInSol: "true" | "false"
-  amount: number
+  solAmount?: number
+  tokenAmount?: number
   slippage: number
   priorityFee: number
-  pool: "pump" | "raydium"
 }
 
 export enum TransactionMode {
@@ -64,8 +68,17 @@ export class PumpFunService {
       drpc: new Connection(Deno.env.get("RPC_DRPC")!, connectionConfig),
       ankr: new Connection(Deno.env.get("RPC_ANKR")!, connectionConfig),
       solanatracker: new Connection(Deno.env.get("RPC_SOLANATRACKER")!, connectionConfig),
+      chainstack: new Connection(Deno.env.get("RPC_CHAINSTACK")!, connectionConfig),
     }
     this.keypair = Keypair.fromSecretKey(bs58.decode(this.options.walletSecretKey))
+  }
+
+  public async trade(request: TradeRequest): Promise<TradeAction> {
+    if (request.action === "buy") {
+      return await this.pumpFunBuy(request)
+    } else {
+      return await this.pumpFunSell(request)
+    }
   }
 
   private normalizeTransaction(
@@ -82,10 +95,9 @@ export class PumpFunService {
 
     const gas = (tx.meta?.fee ?? 0) / 1e9
     const rent = 0.00203928
-    const apiFeeRatio = 0.005
+    const apiFeeRatio = 0
     const tradingFeeRatio = 0.01
 
-    // 3) Prepare the result object
     const result: TradeAction = {
       mint: request.mint,
       txType: request.action, // "buy" or "sell"
@@ -99,9 +111,9 @@ export class PumpFunService {
     }
 
     if (request.action === "buy") {
-      result.solAmount = request.amount
-      result.feeAmount = gas + (request.amount * tradingFeeRatio) + (request.amount * apiFeeRatio) + rent
-      result.tradePrice = request.amount / Math.abs(tokenChange)
+      result.solAmount = request.solAmount!
+      result.feeAmount = gas + (request.solAmount! * tradingFeeRatio) + (request.solAmount! * apiFeeRatio) + rent
+      result.tradePrice = request.solAmount! / Math.abs(tokenChange)
     } else {
       const solAmount = (solChange + gas - rent) / (1 - apiFeeRatio - tradingFeeRatio)
       const apiFee = solAmount * (apiFeeRatio + tradingFeeRatio)
@@ -113,14 +125,16 @@ export class PumpFunService {
     return result
   }
 
-
-  async sendAndConfirmTransactionWrapper(tx: VersionedTransaction): Promise<ParsedTransactionWithMeta> {
+  private async sendAndConfirmTransactionWrapper(tx: VersionedTransaction): Promise<ParsedTransactionWithMeta> {
     let signature: string
     try {
       const t = Date.now()
       signature = await callWithConnectionList(
-        (connection) => connection.sendTransaction(tx),
+        (connection) => connection.sendTransaction(tx, {
+          skipPreflight: true,
+        }),
         [
+          this.connections.chainstack,
           this.connections.quicknode,
           this.connections.solana,
           this.connections.solanatracker,
@@ -153,12 +167,13 @@ export class PumpFunService {
 
       const t1 = Date.now()
       const latestBlockhash = await callWithConnectionList(
-        (connection) => connection.getLatestBlockhash("confirmed"),
+        (connection) => connection.getLatestBlockhash('processed'),
         [
-          this.connections.solanatracker,
+          this.connections.chainstack,
           this.connections.quicknode,
-          this.connections.drpc,
           this.connections.solana,
+          this.connections.solanatracker,
+          this.connections.drpc,
         ],
       )
       console.log(`[PumpPortalService] Latest blockhash in ${Date.now() - t1}ms`)
@@ -171,9 +186,10 @@ export class PumpFunService {
       const confirmation = await callWithConnectionList(
         (connection) => connection.confirmTransaction(confirmationStrategy),
         [
-          this.connections.solanatracker,
-          this.connections.solana,
           this.connections.quicknode,
+          this.connections.solana,
+          this.connections.chainstack,
+          this.connections.solanatracker,
         ],
       )
       console.log(`[PumpPortalService] Transaction confirmed in ${Date.now() - t2}ms`)
@@ -200,9 +216,9 @@ export class PumpFunService {
         [
           this.connections.quicknode,
           this.connections.solanatracker,
+          this.connections.solana,
           this.connections.drpc,
           this.connections.ankr,
-          this.connections.solana,
         ],
       )
       return txn
@@ -213,16 +229,26 @@ export class PumpFunService {
     }
   }
 
-  async pumpFunBuy(request: TradeRequest): Promise<TradeAction> {
-    const { mint: mintStr, amount, slippage, priorityFee } = request
+  private async pumpFunBuy(request: TradeRequest): Promise<TradeAction> {
+    const { mint: mintStr, solAmount, slippage, priorityFee } = request
+
+    if (
+      !mintStr ||
+      solAmount === undefined ||
+      slippage === undefined ||
+      priorityFee === undefined
+    ) {
+      throw new Error('Missing required trade parameters.')
+    }
 
     const mint = new PublicKey(mintStr)
     const coinData = await getCoinData(mintStr)
     if (!coinData) {
-      throw new Error("Failed to retrieve coin data...")
+      throw new Error('Failed to retrieve coin data.')
     }
+    logger.info({ coinData })
 
-    const payer = await getKeyPairFromPrivateKey(this.options.walletSecretKey)
+    const payer = this.keypair!
     const owner = payer.publicKey
 
     const txBuilder = new Transaction()
@@ -236,10 +262,10 @@ export class PumpFunService {
     const tokenAccountInfo = await callWithConnectionList(
       (connection) => connection.getAccountInfo(tokenAccountAddress),
       [
-        this.connections.drpc,
         this.connections.quicknode,
         this.connections.solana,
         this.connections.solanatracker,
+        this.connections.drpc,
       ],
     )
 
@@ -258,17 +284,17 @@ export class PumpFunService {
       tokenAccount = tokenAccountAddress
     }
 
-    const solInLamports = amount * LAMPORTS_PER_SOL
+    const solInLamports = solAmount! * LAMPORTS_PER_SOL
     const tokenOut = Math.floor(solInLamports * coinData["virtual_token_reserves"] / coinData["virtual_sol_reserves"])
 
-    const solInWithSlippage = amount * (1 + (slippage / 100))
+    const solInWithSlippage = solAmount! * (1 + (slippage / 100))
     const maxSolCost = Math.floor(solInWithSlippage * LAMPORTS_PER_SOL)
     const ASSOCIATED_USER = tokenAccount
     const USER = owner
     const BONDING_CURVE = new PublicKey(coinData['bonding_curve'])
     const ASSOCIATED_BONDING_CURVE = new PublicKey(coinData['associated_bonding_curve'])
 
-    const keys = [
+    const keys: AccountMeta[] = [
       { pubkey: GLOBAL, isSigner: false, isWritable: false },
       { pubkey: FEE_RECIPIENT, isSigner: false, isWritable: true },
       { pubkey: mint, isSigner: false, isWritable: false },
@@ -300,18 +326,32 @@ export class PumpFunService {
       (connection) => createVersionedTransaction(connection, txBuilder.instructions, payer.publicKey, priorityFee),
       [
         this.connections.quicknode,
-        this.connections.solanatracker,
         this.connections.solana,
+        this.connections.chainstack,
+        this.connections.solanatracker,
       ],
     )
+
+    transaction.sign([payer])
 
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
     return this.normalizeTransaction(request, txn)
   }
 
 
-  async pumpFunSell(request: TradeRequest): Promise<TradeAction> {
-    const { mint: mintStr, amount, slippage, priorityFee } = request
+  private async pumpFunSell(request: TradeRequest): Promise<TradeAction> {
+    const { mint: mintStr, tokenAmount, slippage, priorityFee } = request
+
+    // Validate inputs
+    if (
+      !mintStr ||
+      tokenAmount === undefined ||
+      slippage === undefined ||
+      priorityFee === undefined
+    ) {
+      throw new Error('Missing required trade parameters.')
+    }
+
 
     const mint = new PublicKey(mintStr)
     const coinData = await getCoinData(mintStr)
@@ -319,88 +359,110 @@ export class PumpFunService {
       throw new Error("Failed to retrieve coin data...")
     }
 
-    const payer = await getKeyPairFromPrivateKey(this.options.walletSecretKey)
+    const payer = this.keypair!
     const owner = payer.publicKey
 
-    const txBuilder = new Transaction()
-
-    const tokenAccountAddress = await getAssociatedTokenAddress(
-      mint,
-      owner,
-      false
-    )
-
-    const tokenAccountInfo = await callWithConnectionList(
-      (connection) => connection.getAccountInfo(tokenAccountAddress),
+    const tokenAccounts = await callWithConnectionList(
+      (connection) => connection.getParsedTokenAccountsByOwner(
+        owner,
+        { programId: TOKEN_PROGRAM_ID }
+      ),
       [
-        this.connections.drpc,
         this.connections.quicknode,
-        this.connections.solana,
         this.connections.solanatracker,
+        this.connections.drpc,
+        this.connections.solana,
       ],
     )
 
-    let tokenAccount: PublicKey
-    if (!tokenAccountInfo) {
-      txBuilder.add(
-        createAssociatedTokenAccountInstruction(
-          payer.publicKey,
-          tokenAccountAddress,
-          payer.publicKey,
-          mint
-        )
-      )
-      tokenAccount = tokenAccountAddress
-    } else {
-      tokenAccount = tokenAccountAddress
+    const tokenAccount = tokenAccounts.value.find(({ account }) => {
+      const parsedInfo = account.data.parsed.info
+      return parsedInfo.mint === mintStr
+    })
+    if (!tokenAccount) {
+      logger.error("Token account not found", { tokenAccounts, mint })
+      throw new Error("Token account not found")
     }
+    const parsedTokenInfo = tokenAccount.account.data.parsed.info
+    const { amount: tokenBalanceString, decimals: tokenDecimals } = parsedTokenInfo.tokenAmount
+    const tokenBalance = Number(tokenBalanceString)
+    const tokenAmountRaw = tokenAmount * 10 ** tokenDecimals
+    logger.info({
+      tokenBalance,
+      tokenAmountRaw,
+    })
 
     // Calculate minimum SOL output based on slippage
     const slippageDecimal = slippage / 100
-    const tokenBalance = amount // Ensure 'amount' represents the token balance to sell
     const minSolOutput = Math.floor(
-      tokenBalance * (1 - slippageDecimal) * coinData["virtual_sol_reserves"] / coinData["virtual_token_reserves"]
+      tokenAmountRaw * (1 - slippageDecimal) * coinData["virtual_sol_reserves"] / coinData["virtual_token_reserves"]
     )
 
-    const keys = [
-      { pubkey: GLOBAL, isSigner: false, isWritable: false },
-      { pubkey: FEE_RECIPIENT, isSigner: false, isWritable: true },
-      { pubkey: mint, isSigner: false, isWritable: false },
-      { pubkey: new PublicKey(coinData['bonding_curve']), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(coinData['associated_bonding_curve']), isSigner: false, isWritable: true },
-      { pubkey: tokenAccount, isSigner: false, isWritable: true },
-      { pubkey: owner, isSigner: false, isWritable: true },
-      { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
-      { pubkey: ASSOC_TOKEN_ACC_PROG, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-      { pubkey: PUMP_FUN_ACCOUNT, isSigner: false, isWritable: false },
-      { pubkey: PUMP_FUN_PROGRAM, isSigner: false, isWritable: false }
-    ]
 
-    const data = Buffer.concat([
-      bufferFromUInt64("12502976635542562355"), // Instruction identifier for 'sell' action
-      bufferFromUInt64(tokenBalance),
-      bufferFromUInt64(minSolOutput)
-    ])
+    const txBuilder = new Transaction()
 
-    const instruction = new TransactionInstruction({
-      keys: keys,
-      programId: PUMP_FUN_PROGRAM,
-      data: data
-    })
-    txBuilder.add(instruction)
+    if (tokenBalance === 0) {
+      logger.info("Closing empty token account: ", tokenAccount.pubkey.toBase58())
+      txBuilder.add(
+        createCloseAccountInstruction(
+          tokenAccount.pubkey,
+          payer.publicKey,
+          payer.publicKey,
+        )
+      )
+    } else {
+      const keys: AccountMeta[] = [
+        { pubkey: GLOBAL, isSigner: false, isWritable: false },
+        { pubkey: FEE_RECIPIENT, isSigner: false, isWritable: true },
+        { pubkey: mint, isSigner: false, isWritable: false },
+        { pubkey: new PublicKey(coinData['bonding_curve']), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(coinData['associated_bonding_curve']), isSigner: false, isWritable: true },
+        { pubkey: tokenAccount.pubkey, isSigner: false, isWritable: true },
+        { pubkey: owner, isSigner: false, isWritable: true },
+        { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: ASSOC_TOKEN_ACC_PROG, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: PUMP_FUN_ACCOUNT, isSigner: false, isWritable: false },
+        { pubkey: PUMP_FUN_PROGRAM, isSigner: false, isWritable: false }
+      ]
 
-    // Create a VersionedTransaction using the updated utility function
+      const data = Buffer.concat([
+        bufferFromUInt64("12502976635542562355"), // Instruction identifier for 'sell' action
+        bufferFromUInt64(tokenAmountRaw),
+        bufferFromUInt64(minSolOutput)
+      ])
+
+      const instruction = new TransactionInstruction({
+        keys: keys,
+        programId: PUMP_FUN_PROGRAM,
+        data: data
+      })
+      txBuilder.add(instruction)
+
+      if (tokenBalance === tokenAmountRaw) {
+        logger.info("Closing token account: ", tokenAccount.pubkey.toBase58())
+        txBuilder.add(
+          createCloseAccountInstruction(
+            tokenAccount.pubkey,
+            payer.publicKey,
+            payer.publicKey,
+          )
+        )
+      }
+    }
+
     const transaction = await callWithConnectionList(
       (connection) => createVersionedTransaction(connection, txBuilder.instructions, payer.publicKey, priorityFee),
       [
-        this.connections.quicknode,
         this.connections.solana,
-        this.connections.solanatracker,
+        this.connections.quicknode,
+        this.connections.chainstack,
+        // this.connections.solanatracker,
       ],
     )
 
-    // Send and confirm the transaction
+    transaction.sign([payer])
+
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
     return this.normalizeTransaction(request, txn)
   }

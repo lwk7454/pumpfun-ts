@@ -2,6 +2,7 @@ import { PumpFunService } from '@/trader/services/index.ts'
 import dotenv from 'dotenv'
 import { Connection, PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { logger } from '@/shared/utils.ts';
 
 dotenv.config()
 
@@ -25,11 +26,11 @@ addEventListener("error", (event) => {
 const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 const ownerPublicKey = new PublicKey(walletPublicKey)
-const tokenMint = "6DtTgSYQ1rtZoSWJGCziSPNFty2VU4FVECjYkxDfGhQR"
+const tokenMint = "42tXBZnu4vgSAFke3PynBHgbYQQToy77q2VXNmK3pump"
 const action = "buy"
 const solAmount = 0.01
 
-const pumpPortal = new PumpFunService({
+const pumpFun = new PumpFunService({
   walletSecretKey
 })
 
@@ -41,9 +42,14 @@ const findTokenAmount = async (tokenMint: string) => {
   )
   // find token amount in tokenAccounts
   const tokenAccount = tokenAccounts.value.find(({ account }) => {
+
+    logger.info({
+      account: account.data.parsed.info,
+    })
     const parsedInfo = account.data.parsed.info
     return parsedInfo.mint === tokenMint
   })
+
   if (!tokenAccount) {
     throw new Error("Token account not found")
   }
@@ -53,15 +59,15 @@ const findTokenAmount = async (tokenMint: string) => {
   return Number(amount) / 10 ** decimals
 }
 
-
-pumpPortal.trade({
+const result = await pumpFun.trade({
   publicKey: walletPublicKey,
   action,
   mint: tokenMint,
-  denominatedInSol: action === "sell" ? "false" : "true",
-  amount: action === "sell" ? await findTokenAmount(tokenMint) : solAmount,
+  solAmount: action === "buy" ? solAmount : undefined,
+  tokenAmount: action !== "buy" ? await findTokenAmount(tokenMint) : undefined,
   slippage: 10,
-  priorityFee: 0.000001,
-  pool: "pump",
+  priorityFee: 0.00001,
 })
+
+logger.info(result)
 

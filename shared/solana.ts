@@ -59,7 +59,9 @@ export async function createVersionedTransaction(
 
   transactionInstructions.push(...instructions)
 
-  const { blockhash } = await connection.getLatestBlockhash()
+  const { blockhash } = await connection.getLatestBlockhash({
+    commitment: 'processed',
+  })
 
   const messageV0 = new TransactionMessage({
     payerKey: payer,
