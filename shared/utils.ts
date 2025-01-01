@@ -17,6 +17,15 @@ export function printSol(amount: number) {
   return amount.toFixed(7)
 }
 
+let isDryRunVar: boolean | undefined = undefined
+
+export const isDryRun = () => {
+  if (isDryRunVar === undefined) {
+    isDryRunVar = Deno.env.get("DRY_RUN") === "true"
+  }
+  return isDryRunVar
+}
+
 export async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, backoffFactor = 2): Promise<Response> {
   let attempt = 0
   let delay = 1000 // 1 second base

@@ -8,8 +8,8 @@ export abstract class Strategy {
 
   }
 
-  abstract onMarketCapUpdate(event: TokenEvent): Decision
-  abstract onHeartbeat(): Decision
+  abstract onMarketCapUpdate(event: TokenEvent): Promise<Decision>
+  abstract onHeartbeat(): Promise<Decision>
 }
 
 export interface StrategyConstructor {

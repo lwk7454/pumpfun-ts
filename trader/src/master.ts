@@ -1,15 +1,15 @@
 // master.ts
-import { logger, printSol, shorten, wait } from "@/shared/utils.ts"
+import { isDryRun, logger, printSol, shorten, wait } from "@/shared/utils.ts"
 import { StrategyConstructor, TokenEvent, TradeEvent } from "@/trader/interfaces.ts"
 import { InfluxService, PumpFunService } from "@/trader/services/index.ts"
 import { HealthyGrowthStrategy } from '@/trader/strategy/index.ts'
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args"
+import { CommentsReaderStrategy } from '@/trader/strategy/comments_reader_strategy.ts';
 
 export interface MasterConfig {
   maxOpenPositions: number
   baseBid: number
-  dryRun: boolean
   influxService: InfluxService
   pumpFun: PumpFunService
   defaultStrategy: StrategyConstructor
@@ -53,7 +53,7 @@ export class Master {
   public async run(): Promise<void> {
     this.isRunning = true
 
-    if (!this.config.dryRun) {
+    if (!isDryRun()) {
       this.runLive()
     }
 
@@ -189,7 +189,7 @@ export class Master {
         `)
 
         // check sol balance, close all if can't open max positions
-        const balance = this.config.dryRun ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
+        const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
         if (bidRatio === 0) {
           bidRatio = this.config.baseBid / balance
         }
@@ -225,7 +225,7 @@ export class Master {
     const { mint } = event
     const {
       defaultStrategy, walletPublicKey, defaultSlippage,
-      priorityFee, influxService, pumpFun, dryRun
+      priorityFee, influxService, pumpFun
     } = this.config
 
     const worker = new TokenWorker({
@@ -237,7 +237,6 @@ export class Master {
       priorityFee,
       influx: influxService,
       pumpFun,
-      dryRun,
     }, this)
 
     this.activeWorkers.set(mint, worker)
@@ -270,21 +269,17 @@ if (import.meta.main) {
   logger.initFileLogger(`./logs/live-${new Date().toISOString()}/`)
   // Define the expected command-line arguments
   const args = parseArgs(Deno.args, {
-    boolean: ["dryRun"],
     string: ["maxOpenPositions", "baseBid"],
     default: {
-      dryRun: false,
       maxOpenPositions: "30",
-      baseBid: "0.02",
+      baseBid: "0.01",
     },
     alias: {
-      dryRun: ["dry"],
       maxOpenPositions: ["concurrency"],
       baseBid: ["bid"],
     },
   })
 
-  const dryRun: boolean = args.dryRun
   const maxOpenPositions: number = Number(args.maxOpenPositions)
   const baseBid: number = Number(args.baseBid)
 
@@ -299,13 +294,12 @@ if (import.meta.main) {
   const master = new Master({
     maxOpenPositions,
     baseBid,
-    dryRun,
     influxService,
     pumpFun: pumpFun,
     // defaultStrategy: DummyStrategy,
-    defaultStrategy: HealthyGrowthStrategy,
+    defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 50,
+    defaultSlippage: 90,
     priorityFee: 0.00006,
   })
 

@@ -4,7 +4,7 @@ import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
 import { CoinData, getCoinData, PumpFunService } from "./services/pump_fun.ts"
 import { Master } from '@/trader/master.ts'
-import { logger, shorten } from '@/shared/utils.ts'
+import { isDryRun, logger, shorten } from '@/shared/utils.ts'
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -15,7 +15,6 @@ export interface WorkerConfig {
   priorityFee: number
   influx: InfluxService // trade bucket, not market bucket
   pumpFun: PumpFunService
-  dryRun: boolean
 }
 
 export type WorkerCommand = {
@@ -68,7 +67,7 @@ export class TokenWorker {
   private async heartbeat(): Promise<void> {
     if (this.isComplete) return
 
-    const decision = this.strategy.onHeartbeat()
+    const decision = await this.strategy.onHeartbeat()
     return await this.handleDecision(decision)
   }
 
@@ -113,7 +112,7 @@ export class TokenWorker {
   public async handleMarketCapUpdate(event: TokenEvent): Promise<void> {
     if (this.isComplete) return
     if (event.traderPublicKey === this.config.traderAddress) return
-    const decision = this.strategy.onMarketCapUpdate(event)
+    const decision = await this.strategy.onMarketCapUpdate(event)
 
     await this.handleDecision(decision)
   }
@@ -180,7 +179,7 @@ export class TokenWorker {
   }
 
   private async buyToken(solAmount: number): Promise<TradeAction | null> {
-    if (this.config.dryRun) {
+    if (isDryRun()) {
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
@@ -250,7 +249,7 @@ export class TokenWorker {
   }
 
   private async sellToken(tokenAmount: number): Promise<TradeAction | null> {
-    if (this.config.dryRun) {
+    if (isDryRun()) {
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount

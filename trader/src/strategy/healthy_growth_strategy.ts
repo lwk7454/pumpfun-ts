@@ -84,8 +84,8 @@ export class HealthyGrowthStrategy extends Strategy {
     return Math.sqrt(variance) / mean
   }
 
-  onMarketCapUpdate(_event: TokenEvent): Decision {
-    return this.onHeartbeat()
+  async onMarketCapUpdate(_event: TokenEvent): Promise<Decision> {
+    return await this.onHeartbeat()
   }
 
   onInit(token: string): void {
@@ -96,7 +96,7 @@ export class HealthyGrowthStrategy extends Strategy {
     logger.info(`[DummyStrategy] Closed for ${shorten(token)}.`)
   }
 
-  onHeartbeat(): Decision {
+  async onHeartbeat(): Promise<Decision> {
     if (this.hasBought() && this.hasSold()) {
       return { action: "close" }
     }

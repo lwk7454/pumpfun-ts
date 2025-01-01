@@ -1,5 +1,5 @@
 import { bufferFromUInt64, callWithConnectionList, createVersionedTransaction } from '@/shared/solana.ts'
-import { fetchWithProxy, logger } from '@/shared/utils.ts'
+import { fetchWithProxy, isDryRun, logger } from '@/shared/utils.ts'
 import { TradeAction } from '@/trader/interfaces.ts'
 import {
   createAssociatedTokenAccountInstruction,
@@ -53,6 +53,13 @@ export interface CoinData {
   virtual_token_reserves?: number
 }
 
+export interface CoinComment {
+  id: string
+  text: string,
+  user: string,
+  timestamp: number,
+}
+
 export const GLOBAL = new PublicKey("4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf")
 export const FEE_RECIPIENT = new PublicKey("CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM")
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
@@ -66,8 +73,8 @@ export class PumpFunService {
   private connections: Record<string, Connection> = {}
   private keypair: Keypair | null = null
 
-  constructor(private options: PumpFunOptions, dryRun = false) {
-    if (dryRun) return
+  constructor(private options: PumpFunOptions) {
+    if (isDryRun()) return
     const connectionConfig: ConnectionConfig = {
       commitment: 'confirmed',
       disableRetryOnRateLimit: true,
@@ -334,12 +341,6 @@ export class PumpFunService {
       bufferFromUInt64(maxSolCost)
     ])
 
-    logger.info('Buy txn parameters', {
-      tokenOut,
-      maxSolCost,
-      price,
-    })
-
     const instruction = new TransactionInstruction({
       keys: keys,
       programId: PUMP_FUN_PROGRAM,
@@ -558,6 +559,40 @@ export async function getCoinData(mintStr: string): Promise<CoinData> {
       const data = await response.json() as CoinData
       return data
     }
+  } catch (error) {
+    logger.error("Error fetching coin data:", error)
+    throw new Error("Failed to retrieve coin data")
+  }
+}
+
+export async function getCoinComments(mintStr: string): Promise<CoinComment[]> {
+  try {
+    const url = `https://frontend-api-v2.pump.fun/replies/${mintStr}?limit=1000&offset=0`
+    const response = await fetch(url, {
+      headers: {
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.pump.fun/",
+        "Origin": "https://www.pump.fun",
+        "Connection": "keep-alive",
+      }
+    })
+
+    let data: { replies: CoinComment[] }
+    // Check if the response is OK (status in 200–299 range)
+    if (!response.ok) {
+      if (response.status === 429 || response.statusText.toLocaleLowerCase().includes("too many requests")) {
+        const proxyResponse = await fetchWithProxy(url, { headers: response.headers })
+        data = await JSON.parse(proxyResponse)
+      } else {
+        logger.error(`Failed to retrieve coin data: ${response.status} ${response.statusText}`)
+        throw new Error("Failed to retrieve coin data")
+      }
+    } else {
+      data = await response.json()
+    }
+
+    return data.replies
   } catch (error) {
     logger.error("Error fetching coin data:", error)
     throw new Error("Failed to retrieve coin data")

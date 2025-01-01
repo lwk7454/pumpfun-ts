@@ -8,18 +8,16 @@ const options: PumpFunOptions = {
   walletSecretKey: 'your-wallet-secret-key', // Use a valid base58 secret key for testing
 }
 
-const service = new PumpFunService(options, true) // Initialize with dryRun=true to bypass connections
+const service = new PumpFunService(options)
 
 Deno.test("PumpPortalService.normalizeTransaction - Buy Transaction", () => {
   const buyRequest: TradeRequest = {
     publicKey: 'somePublicKey',
     action: 'buy',
     mint: 'Awt4iFZ6EKHgrvuQybKiwdENoLeAZYSo9wbXHCowWDFY',
-    denominatedInSol: 'true',
-    amount: 0.001,
+    solAmount: 0.001,
     slippage: 10,
     priorityFee: 0.00001,
-    pool: 'pump',
   }
 
   const tradeAction: TradeAction = service['normalizeTransaction'](buyRequest, txnBuy)
@@ -50,11 +48,9 @@ Deno.test("PumpPortalService.normalizeTransaction - Sell Transaction", () => {
     publicKey: 'somePublicKey',
     action: 'sell',
     mint: 'FbGqkdq6ENfs7Sm5KLvgTeh5cs4i9k6Pn7dNxeVDpump',
-    denominatedInSol: 'false',
-    amount: 28994.417101,
+    tokenAmount: 28994.417101,
     slippage: 10,
     priorityFee: 0.00001,
-    pool: 'pump',
   }
 
   const tradeAction: TradeAction = service['normalizeTransaction'](sellRequest, txnSell)

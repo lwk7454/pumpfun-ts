@@ -7,13 +7,14 @@ import { InfluxDataFeeder } from './data_feeders/influx_feeder.ts';
 import { assert } from '@std/assert';
 import { logger } from '@/shared/utils.ts';
 import { HealthyGrowthStrategy } from '@/trader/strategy/healthy_growth_strategy.ts';
+import { CommentsReaderStrategy } from '@/trader/strategy/comments_reader_strategy.ts';
 
 Deno.test('Dry run', async () => {
+  Deno.env.set("DRY_RUN", "true")
   await logger.initFileLogger(`./logs/dry-run-${new Date().toISOString()}`)
   const startDate = new Date(Deno.env.get("START_DATE") || '2024-12-27T03:30:00Z')
   const endDate = new Date(Deno.env.get("END_DATE") || '2024-12-27T03:32:00Z')
   using time = new FakeTime(startDate);
-  const dryRun = true
   const WALLET_SECRET = ''
   const WALLET_PUBLIC_KEY = ''
 
@@ -23,17 +24,16 @@ Deno.test('Dry run', async () => {
   const influxService = new InfluxService()
   const pumpFun = new PumpFunService({
     walletSecretKey: WALLET_SECRET,
-  }, true)
+  })
 
   const master = new Master({
     maxOpenPositions: 30,
     baseBid: 0.02,
-    dryRun,
     influxService,
-    pumpFun: pumpFun,
-    defaultStrategy: HealthyGrowthStrategy,
+    pumpFun,
+    defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 10,
+    defaultSlippage: 90,
     priorityFee: 0.0001,
   })
 

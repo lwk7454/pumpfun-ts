@@ -30,12 +30,12 @@
   },
   "lint": {
     "rules": {
-      "recommended": true, 
       "tags": [
         "recommended"
       ], 
       "exclude": [
-        "no-unused-vars"
+        "no-unused-vars",
+        "require-await"
       ]
     }
   },

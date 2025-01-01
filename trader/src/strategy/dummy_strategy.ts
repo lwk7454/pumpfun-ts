@@ -56,8 +56,8 @@ export class DummyStrategy extends Strategy {
     return this.isSold = this.actions.some(action => action.txType === "sell")
   }
 
-  onMarketCapUpdate(_event: TokenEvent): Decision {
-    return this.onHeartbeat()
+  async onMarketCapUpdate(_event: TokenEvent): Promise<Decision> {
+    return await this.onHeartbeat()
   }
 
   onInit(token: string): void {
@@ -68,7 +68,7 @@ export class DummyStrategy extends Strategy {
     logger.info(`[DummyStrategy] Closed for ${shorten(token)}.`)
   }
 
-  onHeartbeat(): Decision {
+  async onHeartbeat(): Promise<Decision> {
     if (this.hasBought() && this.hasSold()) {
       return { action: "close" }
     }
