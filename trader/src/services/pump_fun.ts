@@ -1,28 +1,28 @@
-import { Buffer } from 'node:buffer'
-import { callWithConnectionList } from '@/shared/solana.ts'
+import { bufferFromUInt64, callWithConnectionList, createVersionedTransaction } from '@/shared/solana.ts'
 import { fetchWithProxy, logger } from '@/shared/utils.ts'
 import { TradeAction } from '@/trader/interfaces.ts'
 import {
+  createAssociatedTokenAccountInstruction,
+  createCloseAccountInstruction,
+  getAssociatedTokenAddress,
+  getMint,
+  Mint
+} from '@solana/spl-token'
+import {
+  AccountMeta,
   Connection,
   ConnectionConfig,
   Keypair,
+  LAMPORTS_PER_SOL,
   ParsedTransactionWithMeta,
   PublicKey,
-  VersionedTransaction,
   SystemProgram,
+  Transaction,
+  TransactionInstruction,
+  VersionedTransaction,
 } from '@solana/web3.js'
 import bs58 from 'bs58'
-import {
-  createAssociatedTokenAccountInstruction,
-  getAssociatedTokenAddress,
-  createCloseAccountInstruction
-} from '@solana/spl-token'
-import { Transaction } from '@solana/web3.js'
-import { LAMPORTS_PER_SOL } from '@solana/web3.js'
-import { bufferFromUInt64 } from '@/shared/solana.ts'
-import { TransactionInstruction } from '@solana/web3.js'
-import { createVersionedTransaction } from '@/shared/solana.ts'
-import { AccountMeta } from '@solana/web3.js';
+import { Buffer } from 'node:buffer'
 
 export interface PumpFunOptions {
   walletSecretKey: string   // Base58 string or other secure format
@@ -37,6 +37,7 @@ export interface TradeRequest {
   price?: number
   slippage: number
   priorityFee: number
+  coinData?: CoinData
 }
 
 export enum TransactionMode {
@@ -47,8 +48,9 @@ export enum TransactionMode {
 export interface CoinData {
   bonding_curve: string
   associated_bonding_curve: string
-  virtual_token_reserves: number
-  virtual_sol_reserves: number
+  decimals: number
+  virtual_sol_reserves?: number
+  virtual_token_reserves?: number
 }
 
 export const GLOBAL = new PublicKey("4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf")
@@ -63,7 +65,6 @@ export const SYSTEM_PROGRAM_ID = SystemProgram.programId
 export class PumpFunService {
   private connections: Record<string, Connection> = {}
   private keypair: Keypair | null = null
-  private coinData: CoinData | null = null
 
   constructor(private options: PumpFunOptions, dryRun = false) {
     if (dryRun) return
@@ -197,9 +198,9 @@ export class PumpFunService {
       const confirmation = await callWithConnectionList(
         (connection) => connection.confirmTransaction(confirmationStrategy),
         [
-          this.connections.quicknode,
           this.connections.solanatracker,
           this.connections.solana,
+          this.connections.quicknode,
           this.connections.chainstack,
         ],
       )
@@ -242,6 +243,7 @@ export class PumpFunService {
 
   private async pumpFunBuy(request: TradeRequest): Promise<TradeAction> {
     const { mint: mintStr, solAmount, slippage, priorityFee } = request
+    let coinData = request.coinData ?? null
 
     if (
       !mintStr ||
@@ -253,15 +255,12 @@ export class PumpFunService {
     }
 
     const mint = new PublicKey(mintStr)
-    if (!this.coinData) {
-      this.coinData = await getCoinData(mintStr)
-    }
 
     const payer = this.keypair!
     const owner = payer.publicKey
-
     const txBuilder = new Transaction()
-
+    let tokenAccount: PublicKey
+    
     const tokenAccountAddress = await getAssociatedTokenAddress(
       mint,
       owner,
@@ -278,7 +277,6 @@ export class PumpFunService {
       ],
     )
 
-    let tokenAccount: PublicKey
     if (!tokenAccountInfo) {
       txBuilder.add(
         createAssociatedTokenAccountInstruction(
@@ -294,10 +292,17 @@ export class PumpFunService {
     }
 
     const solInLamports = solAmount! * LAMPORTS_PER_SOL
-    let price = request.price
-    if (!price) {
-      this.coinData = await getCoinData(mintStr)
-      price = this.coinData.virtual_sol_reserves / this.coinData.virtual_token_reserves
+    let price
+    if (!request.price) {
+      const coin = await getCoinData(mintStr)
+      const mint = await this.getMintInfo(mintStr)
+      coinData = {
+        ...coin,
+        decimals: mint.decimals,
+      }
+      price = coinData.virtual_sol_reserves! / coinData.virtual_token_reserves!
+    } else {
+      price = request.price * (LAMPORTS_PER_SOL / 10 ** coinData!.decimals)
     }
     const tokenOut = Math.floor(solInLamports / price)
 
@@ -305,8 +310,8 @@ export class PumpFunService {
     const maxSolCost = Math.floor(solInWithSlippage * LAMPORTS_PER_SOL)
     const ASSOCIATED_USER = tokenAccount
     const USER = owner
-    const BONDING_CURVE = new PublicKey(this.coinData['bonding_curve'])
-    const ASSOCIATED_BONDING_CURVE = new PublicKey(this.coinData['associated_bonding_curve'])
+    const BONDING_CURVE = new PublicKey(coinData!.bonding_curve)
+    const ASSOCIATED_BONDING_CURVE = new PublicKey(coinData!.associated_bonding_curve)
 
     const keys: AccountMeta[] = [
       { pubkey: GLOBAL, isSigner: false, isWritable: false },
@@ -329,6 +334,12 @@ export class PumpFunService {
       bufferFromUInt64(maxSolCost)
     ])
 
+    logger.info('Buy txn parameters', {
+      tokenOut,
+      maxSolCost,
+      price,
+    })
+
     const instruction = new TransactionInstruction({
       keys: keys,
       programId: PUMP_FUN_PROGRAM,
@@ -346,6 +357,7 @@ export class PumpFunService {
 
   private async pumpFunSell(request: TradeRequest): Promise<TradeAction> {
     const { mint: mintStr, tokenAmount, slippage, priorityFee } = request
+    let coinData = request.coinData ?? null
 
     // Validate inputs
     if (
@@ -359,10 +371,6 @@ export class PumpFunService {
 
 
     const mint = new PublicKey(mintStr)
-
-    if (!this.coinData) {
-      this.coinData = await getCoinData(mintStr)
-    }
 
     const payer = this.keypair!
     const owner = payer.publicKey
@@ -399,11 +407,18 @@ export class PumpFunService {
 
     // Calculate minimum SOL output based on slippage
     const slippageDecimal = slippage / 100
-    let price = request.price
-    if (!price) {
-      this.coinData = await getCoinData(mintStr)
-      price = this.coinData.virtual_sol_reserves / this.coinData.virtual_token_reserves
+    let price
+    if (!request.price) {
+      const coin = await getCoinData(mintStr)
+      coinData = {
+        ...coin,
+        decimals: tokenDecimals,
+      }
+      price = coinData.virtual_sol_reserves! / coinData.virtual_token_reserves!
+    } else {
+      price = request.price * (LAMPORTS_PER_SOL / (10 ** tokenDecimals))
     }
+
     const minSolOutput = Math.floor(
       tokenAmountRaw * (1 - slippageDecimal) * price
     )
@@ -424,8 +439,8 @@ export class PumpFunService {
         { pubkey: GLOBAL, isSigner: false, isWritable: false },
         { pubkey: FEE_RECIPIENT, isSigner: false, isWritable: true },
         { pubkey: mint, isSigner: false, isWritable: false },
-        { pubkey: new PublicKey(this.coinData.bonding_curve), isSigner: false, isWritable: true },
-        { pubkey: new PublicKey(this.coinData.associated_bonding_curve), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(coinData!.bonding_curve), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(coinData!.associated_bonding_curve), isSigner: false, isWritable: true },
         { pubkey: tokenAccount.pubkey, isSigner: false, isWritable: true },
         { pubkey: owner, isSigner: false, isWritable: true },
         { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
@@ -470,6 +485,18 @@ export class PumpFunService {
   async getSolBalance(): Promise<number> {
     const balance = await this.connections.quicknode.getBalance(this.keypair!.publicKey)
     return balance / LAMPORTS_PER_SOL
+  }
+
+  async getMintInfo(mint: string): Promise<Mint> {
+    return await callWithConnectionList(
+      (connection) => getMint(connection, new PublicKey(mint), 'processed', TOKEN_PROGRAM_ID),
+      [
+        this.connections.quicknode,
+        this.connections.solanatracker,
+        this.connections.solana,
+        this.connections.drpc,
+      ],
+    )
   }
 
   async getBlockHashFromPumpPortal(request: TradeRequest) {

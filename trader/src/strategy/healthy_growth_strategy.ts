@@ -13,7 +13,7 @@ export class HealthyGrowthStrategy extends Strategy {
   PROFIT_THRESHOLD = 1.2
   GROWTH_RATE_LOWER_BOUND = 5 // %
   GROWTH_RATE_UPPER_BOUND = 30 // %
-  TIMEOUT = 1000 * 120
+  SELL_TIMEOUT = 1000 * 120
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
   GRACE_PERIOD = 1000 * 120 // milliseconds
   LOOKBACK_PERIOD = 1000 * 60 // milliseconds
@@ -122,11 +122,14 @@ export class HealthyGrowthStrategy extends Strategy {
       const lastEvent = this.events.at(-1)!
       const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)
 
-      if (priceDiff < this.LOSS_THRESHOLD || priceDiff > this.PROFIT_THRESHOLD) {
-        logger.info(`[DummyStrategy] Price diff sell, ratio: ${priceDiff}`)
+      if (priceDiff < this.LOSS_THRESHOLD) {
+        logger.info(`[DummyStrategy] Price loss sell, ratio: ${priceDiff}`)
         return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
-      } else if (Date.now() - lastEvent.timestamp > this.TIMEOUT) {
-        logger.info(`[DummyStrategy] Timeout sell`)
+      } else if (priceDiff > this.PROFIT_THRESHOLD) {
+        logger.info(`[DummyStrategy] Price profit sell, ratio: ${priceDiff}`)
+        return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
+      } else if (Date.now() - lastEvent.timestamp > this.SELL_TIMEOUT) {
+        logger.info(`[DummyStrategy] Sell stale coin, ratio: ${priceDiff}`)
         return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
       }
     }

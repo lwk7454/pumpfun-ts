@@ -68,7 +68,6 @@ export async function fetchWithProxy(url: string, options: RequestInit): Promise
   } else {
     throw new Error(`Proxy error: ${response.status} ${response.statusText}`)
   }
-
 }
 
 export const logger = new Logger()

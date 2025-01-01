@@ -26,7 +26,7 @@ addEventListener("error", (event) => {
 const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 const ownerPublicKey = new PublicKey(walletPublicKey)
-const tokenMint = "Cqyjee7Y74rqkkeNEvYKWJvAo3R8JzS4WHNJ1BPqpump"
+const tokenMint = "Da2VVz8eVVAfMkxNjt4fEPVwngTS76bfgjjeHFVKq3v7"
 const action = "sell"
 const solAmount = 0.01
 
@@ -62,7 +62,7 @@ const result = await pumpFun.trade({
   solAmount: action === "buy" ? solAmount : undefined,
   tokenAmount: action !== "buy" ? await findTokenAmount(tokenMint) : undefined,
   slippage: 10,
-  priorityFee: 0.00002,
+  priorityFee: 0.0002,
 })
 
 logger.info(result)

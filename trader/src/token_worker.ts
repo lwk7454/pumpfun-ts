@@ -2,7 +2,7 @@
 import { Decision, StrategyConstructor, TradeAction } from '@/trader/interfaces.ts'
 import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
-import { PumpFunService } from "./services/pump_fun.ts"
+import { CoinData, getCoinData, PumpFunService } from "./services/pump_fun.ts"
 import { Master } from '@/trader/master.ts'
 import { logger, shorten } from '@/shared/utils.ts'
 
@@ -47,10 +47,12 @@ export class TokenWorker {
   private isProcessing = false
 
   public boughtTokens: number = 0
+  private coinData: CoinData | null = null
 
   constructor(private config: WorkerConfig, private master: Master) {
     this.strategy = new config.strategy(this.events, this.actions, this.config.baseBid)
     this.tokenMint = this.config.initEvent.mint
+    this.events.push(this.config.initEvent)
     this.handleMarketCapUpdate(this.config.initEvent)
   }
 
@@ -81,9 +83,12 @@ export class TokenWorker {
     this.isProcessing = true
 
     while (this.commandQueue.length > 0 && !this.isComplete) {
-      // only process the last command, remove all earlier commands
-      const command = this.commandQueue.pop()!
-      if (this.commandQueue.length > 0)this.commandQueue = []
+      const command = this.commandQueue.shift()!
+      if (command.type === "marketCapUpdate") {
+        this.events.push(command.event)
+      }
+      if (this.commandQueue.length !== 0) continue
+
       if (command.type === "marketCapUpdate") {
         await this.handleMarketCapUpdate(command.event)
       } else if (command.type === "heartbeat") {
@@ -108,9 +113,7 @@ export class TokenWorker {
   public async handleMarketCapUpdate(event: TokenEvent): Promise<void> {
     if (this.isComplete) return
     if (event.traderPublicKey === this.config.traderAddress) return
-
     const decision = this.strategy.onMarketCapUpdate(event)
-    this.events.push(event)
 
     await this.handleDecision(decision)
   }
@@ -161,13 +164,28 @@ export class TokenWorker {
     return lastEvent.solAmount / lastEvent.tokenAmount
   }
 
+  private async setCoinData(){
+    try {
+      const { bonding_curve, associated_bonding_curve } = await getCoinData(this.tokenMint)
+      const { decimals } = await this.config.pumpFun.getMintInfo(this.tokenMint)
+      this.coinData = {
+        bonding_curve,
+        associated_bonding_curve,
+        decimals,
+      }
+    } catch (err) {
+      logger.error(`[TokenWorker] Failed to set coin data for ${this.tokenMint}`, err)
+      throw new Error(`[TokenWorker] Failed to set coin data for ${this.tokenMint}`)
+    }
+  }
+
   private async buyToken(solAmount: number): Promise<TradeAction | null> {
     if (this.config.dryRun) {
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
-      const gasCost = 0.000015 // TODO: get from config
-      const fees = solAmount * 0.015 + this.config.priorityFee + gasCost
+      const gasCost = 0.00003 // TODO: get from config
+      const fees = solAmount * 0.01 + this.config.priorityFee + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {
@@ -183,6 +201,8 @@ export class TokenWorker {
       }
     }
 
+    if (!this.coinData) await this.setCoinData()
+
     try {
       const result = await this.config.pumpFun.trade({
         publicKey: this.config.traderAddress,
@@ -192,6 +212,7 @@ export class TokenWorker {
         slippage: this.config.defaultSlippage,
         priorityFee: this.config.priorityFee,
         price: this.getPrice(),
+        coinData: this.coinData!,
       })
 
       logger.info(`[TokenWorker] BUY transaction successful: `, result)
@@ -234,8 +255,8 @@ export class TokenWorker {
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const solAmount = tokenAmount * lastPrice
-      const gasCost = 0.000006 // TODO: get from config
-      const fees = solAmount * 0.015 + gasCost
+      const gasCost = 0.00003 // TODO: get from config
+      const fees = solAmount * 0.01 + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)
       return {
@@ -251,6 +272,8 @@ export class TokenWorker {
       }
     }
 
+    if (!this.coinData) await this.setCoinData()
+
     try {
       const result = await this.config.pumpFun.trade({
         publicKey: this.config.traderAddress,
@@ -260,6 +283,7 @@ export class TokenWorker {
         slippage: this.config.defaultSlippage,
         priorityFee: this.config.priorityFee,
         price: this.getPrice(),
+        coinData: this.coinData!,
       })
 
       logger.info(`[TokenWorker] SELL transaction successful: `, result)

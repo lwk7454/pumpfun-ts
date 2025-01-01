@@ -189,7 +189,7 @@ export class Master {
         `)
 
         // check sol balance, close all if can't open max positions
-        const balance = await this.config.pumpFun.getSolBalance()
+        const balance = this.config.dryRun ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
         if (bidRatio === 0) {
           bidRatio = this.config.baseBid / balance
         }
@@ -203,12 +203,12 @@ export class Master {
 
         this.lastReportTime = Date.now()
       }
-
       await wait(1)
     }
   }
 
   public onEvent(event: TokenEvent) {
+    if (!this.isRunning) return
     if (this.activeWorkers.has(event.mint)) {
       this.activeWorkers.get(event.mint)!.enqueueCommand({ type: "marketCapUpdate", event })
     } else if (!this.closedTokens.has(event.mint)) {
@@ -274,8 +274,8 @@ if (import.meta.main) {
     string: ["maxOpenPositions", "baseBid"],
     default: {
       dryRun: false,
-      maxOpenPositions: "50",
-      baseBid: "0.01",
+      maxOpenPositions: "30",
+      baseBid: "0.02",
     },
     alias: {
       dryRun: ["dry"],
