@@ -175,7 +175,7 @@ export class Master {
         worker.enqueueCommand({ type: "heartbeat" })
       })
 
-      if (Date.now() - this.lastReportTime > 1000 * 10) {
+      if (Date.now() - this.lastReportTime > 1000 * 5) {
         const report = this.generateReport()
         logger.info(
           `[Master] Report 
@@ -272,7 +272,7 @@ if (import.meta.main) {
     string: ["maxOpenPositions", "baseBid"],
     default: {
       maxOpenPositions: "30",
-      baseBid: "0.01",
+      baseBid: "0.015",
     },
     alias: {
       maxOpenPositions: ["concurrency"],

@@ -10,15 +10,15 @@ type HealthReport = {
 
 export class CommentsReaderStrategy extends Strategy {
 
-  LOSS_THRESHOLD = 0.9
-  PROFIT_THRESHOLD = 1.2
+  LOSS_THRESHOLD = 0.98
+  PROFIT_THRESHOLD = 1.40
   GROWTH_RATE_LOWER_BOUND = 5 // %
   GROWTH_RATE_UPPER_BOUND = 100 // %
   SELL_TIMEOUT = 1000 * 120
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
-  GRACE_PERIOD = 1000 * 180 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 120 // milliseconds
-  SCAM_KEY_WORDS = ["scam", "rugg", "rug.pics"]
+  GRACE_PERIOD = 1000 * 120 // milliseconds
+  LOOKBACK_PERIOD = 1000 * 30 // milliseconds
+  SCAM_KEY_WORDS = ["scam", "rugg", "rug.pics", "Rug pull alert", "a known rugger", "fake project", "fraud"]
 
   private isBought: boolean = false
   private isSold: boolean = false
@@ -66,7 +66,8 @@ export class CommentsReaderStrategy extends Strategy {
     const isHealthy = (
       growthRate > this.GROWTH_RATE_LOWER_BOUND &&
       growthRate < this.GROWTH_RATE_UPPER_BOUND &&
-      volatility < this.VOLATILITY_UPPER_BOUND
+      volatility < this.VOLATILITY_UPPER_BOUND &&
+      data[0].mint.endsWith("pump")
     )
     return {
       growthRate,
@@ -148,7 +149,7 @@ export class CommentsReaderStrategy extends Strategy {
     }
 
     const alertingComments = this.comments.filter(comment => this.SCAM_KEY_WORDS.some(word => comment.text.includes(word)))
-    const isScam = alertingComments.length > 2 && alertingComments.length / this.comments.length > 0.2
+    const isScam = alertingComments.length >= 2 && alertingComments.length / this.comments.length > 0.2
     this.readCommentsResult = !isScam
     return this.readCommentsResult
   }
