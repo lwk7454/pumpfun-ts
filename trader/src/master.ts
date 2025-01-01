@@ -275,7 +275,7 @@ if (import.meta.main) {
     default: {
       dryRun: false,
       maxOpenPositions: "30",
-      baseBid: "0.02",
+      baseBid: "0.01",
     },
     alias: {
       dryRun: ["dry"],
@@ -305,7 +305,7 @@ if (import.meta.main) {
     // defaultStrategy: DummyStrategy,
     defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 50,
+    defaultSlippage: 90,
     priorityFee: 0.00006,
   })
 

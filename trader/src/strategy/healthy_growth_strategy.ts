@@ -1,5 +1,5 @@
 import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
-import { logger, shorten } from '@/shared/utils.ts'
+import {logger, shorten, wait} from '@/shared/utils.ts'
 
 type HealthReport = {
   growthRate: number
@@ -10,13 +10,14 @@ type HealthReport = {
 export class HealthyGrowthStrategy extends Strategy {
 
   LOSS_THRESHOLD = 0.9
-  PROFIT_THRESHOLD = 1.2
-  GROWTH_RATE_LOWER_BOUND = 5 // %
+  PROFIT_THRESHOLD = 1.25
+  GROWTH_RATE_LOWER_BOUND = 2 // %
   GROWTH_RATE_UPPER_BOUND = 30 // %
   SELL_TIMEOUT = 1000 * 120
+  SHARP_DROP_THRESHOLD = 0.1;    // 5% drop
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
-  GRACE_PERIOD = 1000 * 120 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 60 // milliseconds
+  GRACE_PERIOD = 1000 * 600 // milliseconds
+  LOOKBACK_PERIOD = 1000 * 30 // milliseconds
 
   private isBought: boolean = false
   private isSold: boolean = false
@@ -52,23 +53,51 @@ export class HealthyGrowthStrategy extends Strategy {
   }
 
   private isHealthyGrowth(data: TokenEvent[]): HealthReport {
-    if (data.length < 2) return {
+    if (data.length < 5) return {
       growthRate: 0,
       volatility: 0,
       isHealthy: false,
     }
     const growthRate = this.calculateGrowthRate(data)
     const volatility = this.calculateVolatility(data)
+    const majorityBuys = this.hasMajorityBuys(data);
+    const hasNoSharpDrop = this.hasNoSharpDrop(data);
+
     const isHealthy = (
-      growthRate > this.GROWTH_RATE_LOWER_BOUND &&
-      growthRate < this.GROWTH_RATE_UPPER_BOUND &&
-      volatility < this.VOLATILITY_UPPER_BOUND
+        growthRate > this.GROWTH_RATE_LOWER_BOUND &&
+        growthRate < this.GROWTH_RATE_UPPER_BOUND &&
+        volatility < this.VOLATILITY_UPPER_BOUND &&
+        majorityBuys &&
+        hasNoSharpDrop
     )
+
     return {
       growthRate,
       volatility,
       isHealthy,
     }
+  }
+
+  /**
+   * Checks if there has been a sharp drop in the last 15 seconds.
+   * @param data Array of TokenEvent objects.
+   * @returns A boolean indicating whether there has been no sharp drop.
+   */
+  private hasNoSharpDrop(data: TokenEvent[]): boolean {
+    const initialPrice = this.getPrice(data[0])
+    const finalPrice = this.getPrice(data.at(-1)!)
+
+    if ((finalPrice - initialPrice) > 0) {
+      return true;
+    }
+
+    const priceDrop = (initialPrice - finalPrice) / initialPrice;
+    return priceDrop <= this.SHARP_DROP_THRESHOLD
+  }
+
+  private hasMajorityBuys(data: TokenEvent[]): boolean {
+    const buyCount = data.filter(event => event.txType === "buy").length
+    return buyCount > data.length / 2
   }
 
   private calculateGrowthRate(data: TokenEvent[]) {
