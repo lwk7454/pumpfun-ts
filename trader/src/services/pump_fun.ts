@@ -200,7 +200,7 @@ export class PumpFunService {
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
       }
-      
+
       const t2 = Date.now()
       const confirmation = await callWithConnectionList(
         (connection) => connection.confirmTransaction(confirmationStrategy),
@@ -267,7 +267,8 @@ export class PumpFunService {
     const owner = payer.publicKey
     const txBuilder = new Transaction()
     let tokenAccount: PublicKey
-    
+
+    // start building transaction
     const tokenAccountAddress = await getAssociatedTokenAddress(
       mint,
       owner,
@@ -348,7 +349,7 @@ export class PumpFunService {
     })
     txBuilder.add(instruction)
 
-    const blockhash = await this.getBlockHashFromPumpPortal(request)
+    const blockhash = await this.getBlockhashFromRPC()
     const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 80_000)
     transaction.sign([payer])
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
@@ -476,7 +477,7 @@ export class PumpFunService {
       }
     }
 
-    const blockhash = await this.getBlockHashFromPumpPortal(request)
+    const blockhash = await this.getBlockhashFromRPC()
     const transaction = createVersionedTransaction(blockhash, txBuilder.instructions, payer.publicKey, priorityFee, 60_000)
     transaction.sign([payer])
     const txn = await this.sendAndConfirmTransactionWrapper(transaction)
@@ -488,6 +489,7 @@ export class PumpFunService {
     return balance / LAMPORTS_PER_SOL
   }
 
+  // mainly for getting the decimals
   async getMintInfo(mint: string): Promise<Mint> {
     return await callWithConnectionList(
       (connection) => getMint(connection, new PublicKey(mint), 'processed', TOKEN_PROGRAM_ID),
@@ -499,7 +501,6 @@ export class PumpFunService {
       ],
     )
   }
-
 
   async getBlockHashFromPumpPortal(request: TradeRequest) {
     const response = await fetch(`https://pumpportal.fun/api/trade-local`, {
@@ -528,8 +529,22 @@ export class PumpFunService {
       throw new Error("Failed to get block hash from pump portal")
     }
   }
+
+  async getBlockhashFromRPC() {
+    const blockhash = await callWithConnectionList(
+      (connection) => connection.getLatestBlockhash('processed'),
+      [
+        this.connections.quicknode,
+        this.connections.solanatracker,
+        this.connections.solana,
+        this.connections.drpc,
+      ],
+    )
+    return blockhash.blockhash
+  }
 }
 
+// for bonding curve data
 export async function getCoinData(mintStr: string): Promise<CoinData> {
   try {
     const url = `https://frontend-api.pump.fun/coins/${mintStr}`

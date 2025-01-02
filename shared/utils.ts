@@ -50,7 +50,7 @@ export async function fetchWithRetry(url: string, options: RequestInit, maxRetri
   throw new Error(`fetchWithRetry failed after ${maxRetries} attempts. Last error: ${lastError}`)
 }
 
-export async function fetchWithProxy(url: string, options: RequestInit): Promise<string> {
+export async function fetchWithScraper(url: string, options: RequestInit): Promise<string> {
   const proxyUrl = "https://realtime.oxylabs.io/v1/queries"
   const auth = Deno.env.get("OXYLABS_AUTH")
   if (!auth) {
@@ -77,6 +77,34 @@ export async function fetchWithProxy(url: string, options: RequestInit): Promise
   } else {
     throw new Error(`Proxy error: ${response.status} ${response.statusText}`)
   }
+}
+
+export async function fetchWithProxy(url: string, options: RequestInit = {}): Promise<string> {
+  const proxyHost = 'https://brd.superproxy.io:33335'
+  const username = Deno.env.get("SUPER_PROXY_USER") ?? ''
+  const password = Deno.env.get("SUPER_PROXY_PASSWORD") ?? ''
+
+  if (!username || !password) {
+    throw new Error("Proxy credentials are not set (SUPER_PROXY_USER / SUPER_PROXY_PASSWORD).")
+  }
+
+  const client = Deno.createHttpClient({
+    proxy: {
+      url: proxyHost,
+      basicAuth: { username, password },
+    },
+  })
+
+  const response = await fetch(url, {
+    ...options,
+    client,
+  })
+
+  if (!response.ok) {
+    throw new Error(`Proxy error: ${response.status} ${response.statusText}`)
+  }
+
+  return await response.text()
 }
 
 export const logger = new Logger()

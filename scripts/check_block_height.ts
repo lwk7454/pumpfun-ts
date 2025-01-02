@@ -25,7 +25,7 @@ const RPC_ENDPOINTS = [
 async function checkRpcSync() {
   console.log("Checking latest block from each RPC...")
 
-  const portalRequest = getPumpPortalTransaction()
+  // const portalRequest = getPumpPortalTransaction()
 
   // Fetch block heights in parallel
   const rpcResults = RPC_ENDPOINTS.map(async (url) => {
@@ -35,7 +35,7 @@ async function checkRpcSync() {
   })
 
   const validResults = await Promise.all(rpcResults)
-  await portalRequest
+  // await portalRequest
 
   const maxBlockHeight = Math.max(...validResults.map((r) => r.slot))
 
@@ -59,7 +59,6 @@ async function checkRpcSync() {
 
 
 async function getPumpPortalTransaction() {
-  const connection = new Connection(Deno.env.get("RPC_QUICKNODE")!, "confirmed")
   const response = await fetch(`https://pumpportal.fun/api/trade-local`, {
     method: "POST",
     headers: {
@@ -80,11 +79,7 @@ async function getPumpPortalTransaction() {
   if (response.status === 200) {
     const data = await response.arrayBuffer()
     const tx = VersionedTransaction.deserialize(new Uint8Array(data))
-    const signerKeyPair = Keypair.fromSecretKey(bs58.decode(Deno.env.get("PRIVATE_KEY")!))
-    tx.sign([signerKeyPair])
-    const signature = await connection.sendTransaction(tx)
-    console.log("Transaction: https://solscan.io/tx/" + signature);
-    return signature
+    return tx.message.recentBlockhash
   } else {
     console.log("Error response code:", response.status, response.statusText)
     // If you also want to see the text of an error response
@@ -92,6 +87,7 @@ async function getPumpPortalTransaction() {
     console.log("Error response body:", errText)
   }
 }
+
 await checkRpcSync()
 
 // Deno.test("getPumpPortalTransaction", async () => {
