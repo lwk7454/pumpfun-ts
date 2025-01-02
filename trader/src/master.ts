@@ -36,6 +36,7 @@ export class Master {
   private activeWorkers: Map<string, TokenWorker> = new Map();
   private subscribedTokens: Set<string> = new Set()
   private isRunning = false;
+  private isClosing = false
   private ws?: WebSocket
   private workerResults: WorkerResult[] = []
   private closedTokens: Set<string> = new Set()
@@ -43,10 +44,25 @@ export class Master {
   private lastReportTime: number = Date.now()
   private minSolBalance: number
   private currentBid: number
+  private maxLoss: number | null = Number(Deno.env.get("MAX_LOSS")) || null
+
 
   constructor(private config: MasterConfig) {
     this.minSolBalance = this.config.maxOpenPositions * ((this.config.baseBid * 1.01) + this.config.priorityFee + 0.00203928)
     this.currentBid = this.config.baseBid
+
+    Deno.addSignalListener("SIGINT", async () => {
+      if (this.isClosing) {
+        logger.warn("[Master] Force exit")
+        Deno.exit()
+      }
+
+      if (this.openPositions.size > 0) {
+        logger.warn("[Master] Exiting, gracefully selling all positions")
+      }
+      await this.close()
+      Deno.exit()
+    });
   }
 
   // Entry point
@@ -60,13 +76,19 @@ export class Master {
     await this.heartBeat()
   }
 
-  public close(): void {
+  public async close(): Promise<void> {
+    this.isClosing = true
     if (this.ws) {
       this.ws.close()
     }
-    Array.from(this.activeWorkers.keys()).forEach((token) => {
-      this.closeWorker(token)
+    Array.from(this.activeWorkers).forEach(([_, worker]) => {
+      worker.enqueueCommand({ type: "force_close" })
     })
+
+    while (this.activeWorkers.size > 0) {
+      await wait(1)
+    }
+
     this.isRunning = false
 
     const report = this.generateReport()
@@ -110,7 +132,7 @@ export class Master {
       this.ws = undefined
       logger.info('Socket reset')
     } else {
-      logger.info('Starting master')
+      logger.info('Connecting to market feed')
     }
     this.ws = new WebSocket(`wss://pumpportal.fun/api/data`)
 
@@ -190,18 +212,15 @@ export class Master {
 
         // check sol balance, close all if can't open max positions
         const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
+        this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
         if (bidRatio === 0) {
           bidRatio = this.config.baseBid / balance
         }
 
-        if (report.solDelta < -0.3) {
-          logger.info("[Master] Lost more than 0.3, closing all positions", { balance, minSolBalance: this.minSolBalance })
+        if (this.maxLoss && report.solDelta < -this.maxLoss) {
+          logger.info(`[Master] Lost more than ${this.maxLoss}, closing all positions`, { balance, minSolBalance: this.minSolBalance })
           this.close()
-        }
-
-        this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
-
-        if (balance < this.minSolBalance) {
+        } else if (balance < this.minSolBalance) {
           logger.info("[Master] Balance is too low, closing all positions", { balance, minSolBalance: this.minSolBalance })
           this.close()
         }

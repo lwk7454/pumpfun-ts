@@ -21,7 +21,7 @@ export type WorkerCommand = {
   type: "marketCapUpdate"
   event: TokenEvent
 } | {
-  type: "heartbeat"
+  type: "heartbeat" | "force_close"
 }
 
 export type WorkerResult = {
@@ -85,6 +85,9 @@ export class TokenWorker {
       const command = this.commandQueue.shift()!
       if (command.type === "marketCapUpdate") {
         this.events.push(command.event)
+      } else if (command.type === "force_close") {
+        await this.handleDecision({ action: "sell" })
+        await this.handleDecision({ action: "close" })
       }
       if (this.commandQueue.length !== 0) continue
 

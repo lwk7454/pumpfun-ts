@@ -55,7 +55,7 @@ Deno.test('Dry run', async () => {
   } catch (error) {
     logger.error("Error processing events:", error)
   } finally {
-    master.close()
+    await master.close()
   }
 
   assert(true)
