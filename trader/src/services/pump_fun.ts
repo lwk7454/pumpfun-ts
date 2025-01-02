@@ -90,11 +90,11 @@ export class PumpFunService {
     this.keypair = Keypair.fromSecretKey(bs58.decode(this.options.walletSecretKey))
   }
 
-  public async trade(request: TradeRequest): Promise<TradeAction> {
+  public trade(request: TradeRequest): Promise<TradeAction> {
     if (request.action === "buy") {
-      return await this.pumpFunBuy(request)
+      return this.pumpFunBuy(request)
     } else {
-      return await this.pumpFunSell(request)
+      return this.pumpFunSell(request)
     }
   }
 
@@ -499,6 +499,7 @@ export class PumpFunService {
       ],
     )
   }
+
 
   async getBlockHashFromPumpPortal(request: TradeRequest) {
     const response = await fetch(`https://pumpportal.fun/api/trade-local`, {

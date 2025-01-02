@@ -175,7 +175,7 @@ export class Master {
         worker.enqueueCommand({ type: "heartbeat" })
       })
 
-      if (Date.now() - this.lastReportTime > 1000 * 5) {
+      if (Date.now() - this.lastReportTime > 1000 * 60) {
         const report = this.generateReport()
         logger.info(
           `[Master] Report 
@@ -192,6 +192,11 @@ export class Master {
         const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
         if (bidRatio === 0) {
           bidRatio = this.config.baseBid / balance
+        }
+
+        if (report.solDelta < -0.3) {
+          logger.info("[Master] Lost more than 0.3, closing all positions", { balance, minSolBalance: this.minSolBalance })
+          this.close()
         }
 
         this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
@@ -299,8 +304,8 @@ if (import.meta.main) {
     // defaultStrategy: DummyStrategy,
     defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 90,
-    priorityFee: 0.00006,
+    defaultSlippage: 99.99,
+    priorityFee: 0.0001,
   })
 
   master.run()
