@@ -28,13 +28,13 @@ Deno.test('Dry run', async () => {
 
   const master = new Master({
     maxOpenPositions: 30,
-    baseBid: 0.02,
+    baseBid: 0.015,
     influxService,
     pumpFun,
     defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 90,
-    priorityFee: 0.0001,
+    priorityFee: 0.000007,
   })
 
   master.run();

@@ -26,6 +26,11 @@ export type MasterResult = {
   tradedSol: number
 }
 
+export type TokenWithLastUpdated = {
+  mint: string
+  lastUpdated: number
+}
+
 /**
  * The Master class manages:
  *  1. Discovering new tokens (in real-time or from historical data).
@@ -34,34 +39,42 @@ export type MasterResult = {
  *  4. Reports
  */
 export class Master {
+  MAX_WATCH_TIME = 1000 * 60 * 5 // timeout for subscriptions without a worker
+  REPORT_INTERVAL = 1000 * 30
+
   private activeWorkers: Map<string, TokenWorker> = new Map();
-  private subscribedTokens: Set<string> = new Set()
+  private subscribedTokens: Map<string, TokenWithLastUpdated> = new Map()
   private isRunning = false;
   private isClosing = false
   private ws?: WebSocket
   private workerResults: WorkerResult[] = []
-  private closedTokens: Set<string> = new Set()
-  private openPositions: Set<TokenWorker> = new Set()
+  private aggWorkerResults: Omit<WorkerResult, 'mint'> & {tradedTokenCount: number} = {
+    solDelta: 0,
+    tokenDelta: 0,
+    feeTotal: 0,
+    tradedSol: 0,
+    tradedTokenCount: 0,
+  }
+  private closedTokens: Map<string, TokenWithLastUpdated> = new Map()
+  private openPositions: number = 0
   private lastReportTime: number = Date.now()
   private minSolBalance: number
   private currentBid: number
   private maxLoss: number | null = Number(Deno.env.get("MAX_LOSS")) || null
   private startingBalance: number | null = null
-  private currentBalance: number | null = null
-
 
   constructor(private config: MasterConfig) {
     this.minSolBalance = this.config.maxOpenPositions * ((this.config.baseBid * 1.01) + this.config.priorityFee + 0.00203928)
     this.currentBid = this.config.baseBid
 
+    logger.info(`[Master] Initializing. Min Sol required: ${this.minSolBalance} SOL`, this.maxLoss ? `, Max loss: ${this.maxLoss} SOL` : '')
+
     Deno.addSignalListener("SIGINT", async () => {
       if (this.isClosing) {
-        // not working properly
-        // logger.warn("[Master] Force exit")
-        // Deno.exit()
+        return
       }
 
-      if (this.openPositions.size > 0) {
+      if (this.openPositions > 0) {
         logger.warn("[Master] Exiting, gracefully selling all positions")
       }
       await this.close()
@@ -89,11 +102,13 @@ export class Master {
       worker.enqueueCommand({ type: "force_close" })
     })
 
-    while (this.activeWorkers.size > 0) {
+    while (this.openPositions > 0) {
       await wait(1)
     }
 
     this.isRunning = false
+
+    const balance = await this.config.pumpFun.getSolBalance()
 
     const report = this.generateReport()
     logger.info(
@@ -104,10 +119,10 @@ export class Master {
         Traded tokens: ${report.tradedTokenCount},
         Fee: ${printSol(report.feeTotal)} SOL,
         Traded SOL: ${printSol(report.tradedSol)} SOL,
-        Open positions: ${this.openPositions.size},
+        Open positions: ${this.openPositions},
         Starting balance: ${printSol(this.startingBalance)} SOL,
-        Current balance: ${printSol(this.currentBalance)} SOL,
-        Adjusted real profit: ${printSol((this.currentBalance ?? 0) - (this.startingBalance ?? 0))} SOL
+        Current balance: ${printSol(balance)} SOL,
+        Adjusted real profit: ${printSol(balance - (this.startingBalance ?? 0))} SOL
       `)
   }
 
@@ -124,30 +139,52 @@ export class Master {
         tradedSol += result.tradedSol
       }
     })
-    return {
-      solDelta,
-      tokenDelta,
-      tradedTokenCount: this.workerResults.length,
-      feeTotal,
-      tradedSol,
+    this.aggWorkerResults.solDelta += solDelta
+    this.aggWorkerResults.tokenDelta += tokenDelta
+    this.aggWorkerResults.feeTotal += feeTotal
+    this.aggWorkerResults.tradedSol += tradedSol
+    this.aggWorkerResults.tradedTokenCount += this.workerResults.length
+    this.workerResults = []
+    return this.aggWorkerResults
+  }
+
+  private cleanStaleSubscriptions() {
+    const now = Date.now()
+    const unsubscribeTokens: string[] = []
+    this.subscribedTokens.forEach((token, mint) => {
+      if (!this.activeWorkers.has(mint) && now - token.lastUpdated > this.MAX_WATCH_TIME) {
+        this.subscribedTokens.delete(mint)
+        unsubscribeTokens.push(mint)
+      }
+    })
+    if (!isDryRun() && unsubscribeTokens.length > 0) {
+      this.ws!.send(
+        JSON.stringify({
+          method: "unsubscribeTokenTrade",
+          keys: unsubscribeTokens,
+        }),
+      )
     }
   }
 
+  private closeSocket() {
+    if(!this.ws) return
+    this.ws.close()
+    this.ws = undefined
+    logger.info('Socket reset')
+  }
+
   private runLive() {
-    if (this.ws) {
-      this.ws.close()
-      this.ws = undefined
-      logger.info('Socket reset')
-    } else {
-      logger.info('Connecting to market feed')
-    }
+    this.closeSocket()
+    logger.info('Connecting to market feed')
     this.ws = new WebSocket(`wss://pumpportal.fun/api/data`)
 
     this.ws.onerror = e => {
       logger.error('WS Error', e)
+      this.closeSocket()
       setTimeout(() => {
         this.runLive()
-      }, 5000)
+      }, 1000)
     }
 
     this.ws.onopen = () => {
@@ -158,10 +195,12 @@ export class Master {
         }),
       )
       if (this.activeWorkers.size > 0) {
+        const workerMints = Array.from(this.activeWorkers.keys())
+        this.subscribedTokens = new Map(workerMints.map(mint => [mint, { mint, lastUpdated: Date.now() }]))
         this.ws!.send(
           JSON.stringify({
             method: "subscribeTokenTrade",
-            keys: Array.from(this.activeWorkers.keys()),
+            keys: workerMints,
           }),
         )
       }
@@ -174,14 +213,13 @@ export class Master {
         if (data.txType === 'create') {
           const event = data as TradeEvent
           const { mint } = event
-          this.subscribedTokens.add(mint)
+          this.subscribedTokens.set(mint, { mint, lastUpdated: Date.now() })
           this.ws!.send(
             JSON.stringify({
               method: "subscribeTokenTrade",
               keys: [mint],
             }),
           )
-          // logger.info("Subscribed to token trade events for:", mint)
         }
 
         if (['buy', 'sell'].includes(data.txType)) {
@@ -212,7 +250,9 @@ export class Master {
         worker.enqueueCommand({ type: "heartbeat" })
       })
 
-      if (Date.now() - this.lastReportTime > 1000 * 30) {
+      if (Date.now() - this.lastReportTime > this.REPORT_INTERVAL) {
+        this.cleanStaleSubscriptions()
+        this.updateOpenPositions()
         const report = this.generateReport()
         logger.info(
           `[Master] Report 
@@ -222,17 +262,14 @@ export class Master {
           Traded tokens: ${report.tradedTokenCount},
           Fee: ${printSol(report.feeTotal)} SOL,
           Traded SOL: ${printSol(report.tradedSol)} SOL,
-          Open positions: ${this.openPositions.size}
+          Open positions: ${this.openPositions}
         `)
 
         // check sol balance, close all if can't open max positions
         const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
         if (this.startingBalance === null) this.startingBalance = balance
-        this.currentBalance = balance
+        if (bidRatio === 0) bidRatio = this.config.baseBid / balance
         this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
-        if (bidRatio === 0) {
-          bidRatio = this.config.baseBid / balance
-        }
 
         if (this.maxLoss && report.solDelta < -this.maxLoss) {
           logger.info(`[Master] Lost more than ${this.maxLoss}, closing all positions`, { balance, minSolBalance: this.minSolBalance })
@@ -258,7 +295,7 @@ export class Master {
   }
 
   public closeWorker(mint: string) {
-    this.closedTokens.add(mint)
+    this.closedTokens.set(mint, { mint, lastUpdated: Date.now() })
     this.activeWorkers.delete(mint)
     this.subscribedTokens.delete(mint)
 
@@ -299,20 +336,17 @@ export class Master {
       this.workerResults.push(result)
       logger.info(`[Master] Closing Token ${shorten(result.mint)}... Profit: ${printSol(result.solDelta)} SOL, Remaining Tokens: ${result.tokenDelta}`)
     }
-    this.subscribedTokens.delete(result.mint)
     this.closeWorker(result.mint)
   }
 
-  public openPosition(worker: TokenWorker) {
-    this.openPositions.add(worker)
-  }
-
-  public closePosition(worker: TokenWorker) {
-    this.openPositions.delete(worker)
+  public updateOpenPositions() {
+    this.openPositions = Array.from(this.activeWorkers.values()).reduce((prev, curr) => {
+      return prev + (curr.tokenBalance > 1e-6 ? 1 : 0)
+    }, 0)
   }
 
   public allowBuy(): boolean {
-    return this.openPositions.size < this.config.maxOpenPositions
+    return this.openPositions < this.config.maxOpenPositions
   }
 }
 
@@ -351,7 +385,7 @@ if (import.meta.main) {
     defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 99.999,
-    priorityFee: 0.0002,
+    priorityFee: 0.0001,
   })
 
   master.run()

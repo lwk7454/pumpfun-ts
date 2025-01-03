@@ -4,7 +4,7 @@ import { Strategy, TokenEvent } from "@/trader/interfaces.ts"
 import { InfluxService } from "./services/influx_db.ts"
 import { CoinData, getCoinData, PumpFunService } from "./services/pump_fun.ts"
 import { Master } from '@/trader/master.ts'
-import { isDryRun, logger, shorten } from '@/shared/utils.ts'
+import { isDryRun, logger, shorten, wait } from '@/shared/utils.ts'
 
 export interface WorkerConfig {
   initEvent: TokenEvent
@@ -33,6 +33,8 @@ export type WorkerResult = {
 }
 
 export class TokenWorker {
+  MAX_IDLE_TIME = 1000 * 60 * 20 // timeout if not buying. This is just a fail-safe, strategy should handle idle workers
+
   private strategy: Strategy
   private tokenMint: string
   private isComplete = false
@@ -45,7 +47,7 @@ export class TokenWorker {
   private commandQueue: WorkerCommand[] = []
   private isProcessing = false
 
-  public boughtTokens: number = 0
+  public tokenBalance: number = 0
   private coinData: CoinData | null = null
   private startTime: number = Date.now()
 
@@ -57,12 +59,8 @@ export class TokenWorker {
   }
 
   private updateBoughtTokenAmount(action: TradeAction): void {
-    this.boughtTokens += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
-    if (this.boughtTokens > 0) {
-      this.master.openPosition(this)
-    } else {
-      this.master.closePosition(this)
-    }
+    this.tokenBalance += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
+    this.master.updateOpenPositions()
   }
 
   private async heartbeat(): Promise<void> {
@@ -70,7 +68,7 @@ export class TokenWorker {
 
     // if no actions, close after timeout
     const timeElapsed = Date.now() - this.startTime
-    if (this.actions.length === 0 && timeElapsed > 1000 * 60 * 20) {
+    if (this.actions.length === 0 && timeElapsed > this.MAX_IDLE_TIME) {
       this.handleDecision({ action: "close" })
     }
 
@@ -93,7 +91,7 @@ export class TokenWorker {
       if (command.type === "marketCapUpdate") {
         this.events.push(command.event)
       } else if (command.type === "force_close") {
-        if(this.boughtTokens > 0) await this.handleDecision({ action: "sell", amount: this.boughtTokens })
+        if(this.tokenBalance > 0) await this.handleDecision({ action: "sell", amount: this.tokenBalance })
         await this.handleDecision({ action: "close" })
       }
       if (this.commandQueue.length !== 0) continue
@@ -190,10 +188,11 @@ export class TokenWorker {
 
   private async buyToken(solAmount: number): Promise<TradeAction | null> {
     if (isDryRun()) {
+      await wait(10) // simulate blockchain delay
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
-      const gasCost = 0.00003 // TODO: get from config
+      const gasCost = 0.000005// TODO: get from config
       const fees = solAmount * 0.01 + this.config.priorityFee + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
@@ -260,11 +259,12 @@ export class TokenWorker {
 
   private async sellToken(tokenAmount: number): Promise<TradeAction | null> {
     if (isDryRun()) {
+      await wait(10) // simulate blockchain delay
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const solAmount = tokenAmount * lastPrice
-      const gasCost = 0.00003 // TODO: get from config
+      const gasCost = 0.000005 // TODO: get from config
       const fees = solAmount * 0.01 + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)

@@ -210,8 +210,8 @@ export class PumpFunService {
         (connection) => connection.confirmTransaction(confirmationStrategy),
         [
           this.connections.helius,
-          this.connections.solana,
           this.connections.quicknode,
+          this.connections.solana,
           this.connections.solanatracker,
           this.connections.chainstack,
         ],

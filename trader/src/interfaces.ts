@@ -4,12 +4,47 @@ export type Decision = {
 }
 
 export abstract class Strategy {
+  protected startTime: number = Date.now()
+  protected MAX_IDLE_TIME = 1000 * 60 * 5
+  protected isBought: boolean = false
+  protected isSold: boolean = false
+
   constructor(protected events: TokenEvent[], protected actions: TradeAction[], protected baseBid: number) {
 
   }
 
-  abstract onMarketCapUpdate(event: TokenEvent): Promise<Decision>
-  abstract onHeartbeat(): Promise<Decision>
+  public abstract onMarketCapUpdate(event: TokenEvent): Promise<Decision>
+  public async onHeartbeat(): Promise<Decision> {
+    const timeElapsed = Date.now() - this.startTime
+    if (!this.isBought && timeElapsed > this.MAX_IDLE_TIME) {
+      return { action: "close" }
+    }
+    return { action: "hold" }
+  }
+
+  protected getTokenAge() {
+    return Date.now() - this.startTime
+  }
+
+  protected hasBought() {
+    if (this.isBought) return true
+    return this.isBought = this.actions.some(action => action.txType === "buy")
+  }
+
+  protected hasSold() {
+    if (this.isSold) return true
+    return this.isSold = this.actions.some(action => action.txType === "sell")
+  }
+
+  protected getPrice(event: TokenEvent | TradeAction) {
+    if ('tokenAmount' in event) {
+      const e = event as TokenEvent
+      return e.solAmount / e.tokenAmount
+    } else {
+      const e = event as TradeAction
+      return e.tradePrice
+    }
+  }
 }
 
 export interface StrategyConstructor {

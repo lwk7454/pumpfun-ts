@@ -1,6 +1,6 @@
+import { logger } from '@/shared/utils.ts'
 import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
-import { isDryRun, logger } from '@/shared/utils.ts'
-import { CoinComment, getCoinComments } from '@/trader/services/pump_fun.ts';
+import { CoinComment } from '@/trader/services/pump_fun.ts'
 
 type HealthReport = {
   growthRate: number
@@ -20,43 +20,17 @@ export class CommentsReaderStrategy extends Strategy {
   LOOKBACK_PERIOD = 1000 * 20 // milliseconds
   SCAM_KEY_WORDS = ["scam", "rug", "fake project", "fraud"]
 
+  protected override MAX_IDLE_TIME: number = 1000 * 60 * 1
+
   private RAPID_INCREASE_THRESHOLD = 2.5;    // 250% increase
   private MIN_EVENTS_FOR_RAPID = 3;           // Minimum events to consider
   private MAX_EVENTS_FOR_RAPID = 8;           // Maximum events window size
 
-  private isBought: boolean = false
-  private isSold: boolean = false
   private comments: CoinComment[] | null = null
   private readCommentsResult: boolean | null = null
 
   constructor(events: TokenEvent[], actions: TradeAction[], baseBid: number) {
     super(events, actions, baseBid)
-  }
-
-  private getPrice(event: TokenEvent | TradeAction) {
-    if ('tokenAmount' in event) {
-      const e = event as TokenEvent
-      return e.solAmount / e.tokenAmount
-    } else {
-      const e = event as TradeAction
-      return e.tradePrice
-    }
-  }
-
-  private hasBought() {
-    if (this.isBought) return true
-    return this.isBought = this.actions.some(action => action.txType === "buy")
-  }
-
-  private hasSold() {
-    if (this.isSold) return true
-    return this.isSold = this.actions.some(action => action.txType === "sell")
-  }
-
-  private getTokenAge() {
-    const lastEvent = this.events.at(-1)!
-    const firstEvent = this.events.at(0)!
-    return lastEvent.timestamp - firstEvent.timestamp
   }
 
   private isHealthyGrowth(data: TokenEvent[]): HealthReport {
@@ -148,7 +122,6 @@ export class CommentsReaderStrategy extends Strategy {
     return true;
   }
 
-
   private calculateGrowthRate(data: TokenEvent[]) {
     const initialPrice = this.getPrice(data[0])
     const finalPrice = this.getPrice(data.at(-1)!)
@@ -166,7 +139,10 @@ export class CommentsReaderStrategy extends Strategy {
     return await this.onHeartbeat()
   }
 
-  async onHeartbeat(): Promise<Decision> {
+  override async onHeartbeat(): Promise<Decision> {
+    const decision = await super.onHeartbeat()
+    if (decision.action !== "hold") return decision
+
     if (this.hasBought() && this.hasSold()) {
       return { action: "close" }
     }
@@ -180,10 +156,10 @@ export class CommentsReaderStrategy extends Strategy {
     }
 
     const now = Date.now()
-    const thirtySecData = this.events.filter(record => {
+    const lookBackData = this.events.filter(record => {
       return (now - record.timestamp) <= this.LOOKBACK_PERIOD
     })
-    const health = this.isHealthyGrowth(thirtySecData)
+    const health = this.isHealthyGrowth(lookBackData)
 
     if (health.isHealthy && !this.hasBought()) {
       const commentsResult = await this.readComments()
