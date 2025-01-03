@@ -261,12 +261,15 @@ export class Master {
     this.closedTokens.add(mint)
     this.activeWorkers.delete(mint)
     this.subscribedTokens.delete(mint)
-    this.ws!.send(
-      JSON.stringify({
-        method: "unsubscribeTokenTrade",
-        keys: [mint],
-      }),
-    )
+
+    if (!isDryRun()) {
+      this.ws!.send(
+          JSON.stringify({
+            method: "unsubscribeTokenTrade",
+            keys: [mint],
+          }),
+      )
+    }
   }
 
   private spawnWorker(event: TokenEvent): TokenWorker {
@@ -347,7 +350,7 @@ if (import.meta.main) {
     // defaultStrategy: DummyStrategy,
     defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
-    defaultSlippage: 99.99,
+    defaultSlippage: 99.999,
     priorityFee: 0.0002,
   })
 
