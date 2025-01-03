@@ -18,7 +18,7 @@ export class CommentsReaderStrategy extends Strategy {
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
   GRACE_PERIOD = 1000 * 120 // milliseconds
   LOOKBACK_PERIOD = 1000 * 30 // milliseconds
-  SCAM_KEY_WORDS = ["scam", "rugg", "rug.pics", "Rug pull alert", "a known rugger", "fake project", "fraud"]
+  SCAM_KEY_WORDS = ["scam", "rug", "fake project", "fraud"]
 
   private RAPID_INCREASE_THRESHOLD = 2.5;    // 250% increase
   private MIN_EVENTS_FOR_RAPID = 3;           // Minimum events to consider
