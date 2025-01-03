@@ -10,14 +10,14 @@ type HealthReport = {
 
 export class CommentsReaderStrategy extends Strategy {
 
-  LOSS_THRESHOLD = 0.98
-  PROFIT_THRESHOLD = 1.30
+  LOSS_THRESHOLD = 0.97
+  PROFIT_THRESHOLD = 1.35
   GROWTH_RATE_LOWER_BOUND = 5 // %
-  GROWTH_RATE_UPPER_BOUND = 100 // %
-  SELL_TIMEOUT = 1000 * 120
+  GROWTH_RATE_UPPER_BOUND = 30 // %
+  SELL_TIMEOUT = 1000 * 10
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
-  GRACE_PERIOD = 1000 * 120 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 30 // milliseconds
+  GRACE_PERIOD = 1000 * 20 // milliseconds
+  LOOKBACK_PERIOD = 1000 * 20 // milliseconds
   SCAM_KEY_WORDS = ["scam", "rug", "fake project", "fraud"]
 
   private RAPID_INCREASE_THRESHOLD = 2.5;    // 250% increase
@@ -214,16 +214,17 @@ export class CommentsReaderStrategy extends Strategy {
   }
 
   private async readComments(): Promise<boolean> {
-    if (isDryRun()) return true
-
-    if (this.readCommentsResult !== null) return this.readCommentsResult
-    if (!this.comments) {
-      this.comments = await getCoinComments(this.events[0].mint)
-    }
-
-    const alertingComments = this.comments.filter(comment => this.SCAM_KEY_WORDS.some(word => comment.text.includes(word)))
-    const isScam = alertingComments.length >= 1 && alertingComments.length / this.comments.length > 0.2
-    this.readCommentsResult = !isScam
-    return this.readCommentsResult
+    return true
+    // if (isDryRun()) return true
+    //
+    // if (this.readCommentsResult !== null) return this.readCommentsResult
+    // if (!this.comments) {
+    //   this.comments = await getCoinComments(this.events[0].mint)
+    // }
+    //
+    // const alertingComments = this.comments.filter(comment => this.SCAM_KEY_WORDS.some(word => comment.text.includes(word)))
+    // const isScam = alertingComments.length >= 1 && alertingComments.length / this.comments.length > 0.2
+    // this.readCommentsResult = !isScam
+    // return this.readCommentsResult
   }
 }
