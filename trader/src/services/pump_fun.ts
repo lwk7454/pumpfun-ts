@@ -131,9 +131,9 @@ export class PumpFunService {
     }
 
     if (request.action === "buy") {
-      result.solAmount = request.solAmount!
-      result.feeAmount = gas + (request.solAmount! * tradingFeeRatio) + (request.solAmount! * apiFeeRatio) + rent
-      result.tradePrice = request.solAmount! / Math.abs(tokenChange)
+      result.solAmount = (-solChange - gas - rent) / (1 + tradingFeeRatio)
+      result.feeAmount = -solChange - result.solAmount
+      result.tradePrice = result.solAmount / Math.abs(tokenChange)
     } else {
       const solAmount = (solChange + gas - rent) / (1 - apiFeeRatio - tradingFeeRatio)
       const apiFee = solAmount * (apiFeeRatio + tradingFeeRatio)

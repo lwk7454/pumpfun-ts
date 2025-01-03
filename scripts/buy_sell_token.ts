@@ -26,7 +26,7 @@ addEventListener("error", (event) => {
 const walletSecretKey = Deno.env.get("PRIVATE_KEY") || ''
 const walletPublicKey = Deno.env.get("PUBLIC_KEY") || ''
 const ownerPublicKey = new PublicKey(walletPublicKey)
-const tokenMint = "Fz8BmGTktRWjFfxMZqeZ1vzd5H94wZyuswRjgjMEpump"
+const tokenMint = "6q1qX1Y9kJL11AVfBU58PGJR8bWGRUSdohiLzANmpump"
 // deno-lint-ignore no-constant-condition
 const action = false ? "buy" : "sell"
 const solAmount = 0.01
