@@ -93,7 +93,7 @@ export class TokenWorker {
       if (command.type === "marketCapUpdate") {
         this.events.push(command.event)
       } else if (command.type === "force_close") {
-        await this.handleDecision({ action: "sell" })
+        if(this.boughtTokens > 0) await this.handleDecision({ action: "sell", amount: this.boughtTokens })
         await this.handleDecision({ action: "close" })
       }
       if (this.commandQueue.length !== 0) continue
