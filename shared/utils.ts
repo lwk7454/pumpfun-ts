@@ -13,8 +13,8 @@ export function shorten(address: string) {
   return address.slice(0, 6)
 }
 
-export function printSol(amount: number) {
-  return amount.toFixed(7)
+export function printSol(amount: number | undefined | null) {
+  return amount?.toFixed(7) ?? "0"
 }
 
 let isDryRunVar: boolean | undefined = undefined

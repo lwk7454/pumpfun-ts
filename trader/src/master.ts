@@ -46,6 +46,8 @@ export class Master {
   private minSolBalance: number
   private currentBid: number
   private maxLoss: number | null = Number(Deno.env.get("MAX_LOSS")) || null
+  private startingBalance: number | null = null
+  private currentBalance: number | null = null
 
 
   constructor(private config: MasterConfig) {
@@ -54,8 +56,9 @@ export class Master {
 
     Deno.addSignalListener("SIGINT", async () => {
       if (this.isClosing) {
-        logger.warn("[Master] Force exit")
-        Deno.exit()
+        // not working properly
+        // logger.warn("[Master] Force exit")
+        // Deno.exit()
       }
 
       if (this.openPositions.size > 0) {
@@ -101,7 +104,10 @@ export class Master {
         Traded tokens: ${report.tradedTokenCount},
         Fee: ${printSol(report.feeTotal)} SOL,
         Traded SOL: ${printSol(report.tradedSol)} SOL,
-        Open positions: ${this.openPositions.size}
+        Open positions: ${this.openPositions.size},
+        Starting balance: ${printSol(this.startingBalance)} SOL,
+        Current balance: ${printSol(this.currentBalance)} SOL,
+        Adjusted real profit: ${printSol((this.currentBalance ?? 0) - (this.startingBalance ?? 0))} SOL
       `)
   }
 
@@ -206,7 +212,7 @@ export class Master {
         worker.enqueueCommand({ type: "heartbeat" })
       })
 
-      if (Date.now() - this.lastReportTime > 1000 * 60) {
+      if (Date.now() - this.lastReportTime > 1000 * 30) {
         const report = this.generateReport()
         logger.info(
           `[Master] Report 
@@ -221,6 +227,8 @@ export class Master {
 
         // check sol balance, close all if can't open max positions
         const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
+        if (this.startingBalance === null) this.startingBalance = balance
+        this.currentBalance = balance
         this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
         if (bidRatio === 0) {
           bidRatio = this.config.baseBid / balance
