@@ -30,7 +30,8 @@ export type MasterResult = {
  * The Master class manages:
  *  1. Discovering new tokens (in real-time or from historical data).
  *  2. Spawning worker processes up to a concurrency limit.
- *  3. Handling termination of workers when a token is fully traded.
+ *  3. Pass token events to workers
+ *  4. Reports
  */
 export class Master {
   private activeWorkers: Map<string, TokenWorker> = new Map();
@@ -150,6 +151,14 @@ export class Master {
           method: "subscribeNewToken",
         }),
       )
+      if (this.activeWorkers.size > 0) {
+        this.ws!.send(
+          JSON.stringify({
+            method: "subscribeTokenTrade",
+            keys: Array.from(this.activeWorkers.keys()),
+          }),
+        )
+      }
     }
 
     this.ws.onmessage = (event) => {
@@ -163,7 +172,7 @@ export class Master {
           this.ws!.send(
             JSON.stringify({
               method: "subscribeTokenTrade",
-              keys: Array.from(this.subscribedTokens),
+              keys: [mint],
             }),
           )
           // logger.info("Subscribed to token trade events for:", mint)
@@ -243,6 +252,13 @@ export class Master {
   public closeWorker(mint: string) {
     this.closedTokens.add(mint)
     this.activeWorkers.delete(mint)
+    this.subscribedTokens.delete(mint)
+    this.ws!.send(
+      JSON.stringify({
+        method: "unsubscribeTokenTrade",
+        keys: [mint],
+      }),
+    )
   }
 
   private spawnWorker(event: TokenEvent): TokenWorker {
@@ -324,7 +340,7 @@ if (import.meta.main) {
     defaultStrategy: CommentsReaderStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 99.99,
-    priorityFee: 0.0001,
+    priorityFee: 0.0002,
   })
 
   master.run()

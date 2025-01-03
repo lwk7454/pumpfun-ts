@@ -20,6 +20,7 @@ const RPC_ENDPOINTS = [
   Deno.env.get("RPC_ANKR")!,
   Deno.env.get("RPC_SOLANATRACKER")!,
   Deno.env.get("RPC_SOLANA")!,
+  Deno.env.get("RPC_HELIUS")!,
 ]
 
 async function checkRpcSync() {

@@ -47,6 +47,7 @@ export class TokenWorker {
 
   public boughtTokens: number = 0
   private coinData: CoinData | null = null
+  private startTime: number = Date.now()
 
   constructor(private config: WorkerConfig, private master: Master) {
     this.strategy = new config.strategy(this.events, this.actions, this.config.baseBid)
@@ -55,7 +56,7 @@ export class TokenWorker {
     this.handleMarketCapUpdate(this.config.initEvent)
   }
 
-  private updateBoughtTokens(action: TradeAction): void {
+  private updateBoughtTokenAmount(action: TradeAction): void {
     this.boughtTokens += (action.txType === "buy" ? action.tokenAmount : -action.tokenAmount)
     if (this.boughtTokens > 0) {
       this.master.openPosition(this)
@@ -66,6 +67,12 @@ export class TokenWorker {
 
   private async heartbeat(): Promise<void> {
     if (this.isComplete) return
+
+    // if no actions, close after timeout
+    const timeElapsed = Date.now() - this.startTime
+    if (this.actions.length === 0 && timeElapsed > 1000 * 60 * 20) {
+      this.handleDecision({ action: "close" })
+    }
 
     const decision = await this.strategy.onHeartbeat()
     return await this.handleDecision(decision)
@@ -135,7 +142,7 @@ export class TokenWorker {
     if (result) {
       this.events.push(this.mapActionToEvent(result))
       this.actions.push(result)
-      this.updateBoughtTokens(result)
+      this.updateBoughtTokenAmount(result)
     }
   }
 

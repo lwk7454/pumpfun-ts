@@ -16,7 +16,7 @@ export class CommentsReaderStrategy extends Strategy {
   GROWTH_RATE_UPPER_BOUND = 100 // %
   SELL_TIMEOUT = 1000 * 120
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
-  GRACE_PERIOD = 1000 * 120 // milliseconds
+  GRACE_PERIOD = 1000 * 30 // milliseconds
   LOOKBACK_PERIOD = 1000 * 30 // milliseconds
   SCAM_KEY_WORDS = ["scam", "rugg", "rug.pics", "Rug pull alert", "a known rugger", "fake project", "fraud"]
 

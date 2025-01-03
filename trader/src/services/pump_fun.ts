@@ -78,6 +78,7 @@ export class PumpFunService {
     const connectionConfig: ConnectionConfig = {
       commitment: 'confirmed',
       disableRetryOnRateLimit: true,
+      httpAgent: false,
     }
     this.connections = {
       solana: new Connection(Deno.env.get("RPC_SOLANA")!, connectionConfig),
@@ -86,6 +87,7 @@ export class PumpFunService {
       ankr: new Connection(Deno.env.get("RPC_ANKR")!, connectionConfig),
       solanatracker: new Connection(Deno.env.get("RPC_SOLANATRACKER")!, connectionConfig),
       chainstack: new Connection(Deno.env.get("RPC_CHAINSTACK")!, connectionConfig),
+      helius: new Connection(Deno.env.get("RPC_HELIUS")!, connectionConfig),
     }
     this.keypair = Keypair.fromSecretKey(bs58.decode(this.options.walletSecretKey))
   }
@@ -152,6 +154,7 @@ export class PumpFunService {
           skipPreflight: false,
         }),
         [
+          this.connections.helius,
           this.connections.quicknode,
           this.connections.solana,
           this.connections.solanatracker,
@@ -185,8 +188,9 @@ export class PumpFunService {
 
       const t1 = Date.now()
       const latestBlockhash = await callWithConnectionList(
-        (connection) => connection.getLatestBlockhash('processed'),
+        (connection) => connection.getLatestBlockhash('confirmed'),
         [
+          this.connections.helius,
           this.connections.quicknode,
           this.connections.solanatracker,
           this.connections.solana,
@@ -205,9 +209,10 @@ export class PumpFunService {
       const confirmation = await callWithConnectionList(
         (connection) => connection.confirmTransaction(confirmationStrategy),
         [
-          this.connections.solanatracker,
+          this.connections.helius,
           this.connections.solana,
           this.connections.quicknode,
+          this.connections.solanatracker,
           this.connections.chainstack,
         ],
       )
@@ -233,6 +238,7 @@ export class PumpFunService {
           return txn
         },
         [
+          this.connections.helius,
           this.connections.solanatracker,
           this.connections.quicknode,
           this.connections.solana,
@@ -278,6 +284,7 @@ export class PumpFunService {
     const tokenAccountInfo = await callWithConnectionList(
       (connection) => connection.getAccountInfo(tokenAccountAddress),
       [
+        this.connections.helius,
         this.connections.quicknode,
         this.connections.solana,
         this.connections.solanatracker,
@@ -383,6 +390,7 @@ export class PumpFunService {
         { programId: TOKEN_PROGRAM_ID }
       ),
       [
+        this.connections.helius,
         this.connections.quicknode,
         this.connections.solanatracker,
         this.connections.drpc,
@@ -402,10 +410,6 @@ export class PumpFunService {
     const { amount: tokenBalanceString, decimals: tokenDecimals } = parsedTokenInfo.tokenAmount
     const tokenBalance = Number(tokenBalanceString)
     const tokenAmountRaw = Math.floor(tokenAmount * 10 ** tokenDecimals)
-    logger.info({
-      tokenBalance,
-      tokenAmountRaw,
-    })
 
     // Calculate minimum SOL output based on slippage
     const slippageDecimal = slippage / 100
@@ -466,7 +470,6 @@ export class PumpFunService {
       txBuilder.add(instruction)
 
       if (tokenBalance === tokenAmountRaw) {
-        logger.info("Closing token account: ", tokenAccount.pubkey.toBase58())
         txBuilder.add(
           createCloseAccountInstruction(
             tokenAccount.pubkey,
@@ -494,6 +497,7 @@ export class PumpFunService {
     return await callWithConnectionList(
       (connection) => getMint(connection, new PublicKey(mint), 'processed', TOKEN_PROGRAM_ID),
       [
+        this.connections.helius,
         this.connections.quicknode,
         this.connections.solanatracker,
         this.connections.solana,
@@ -532,8 +536,9 @@ export class PumpFunService {
 
   async getBlockhashFromRPC() {
     const blockhash = await callWithConnectionList(
-      (connection) => connection.getLatestBlockhash('processed'),
+      (connection) => connection.getLatestBlockhash('confirmed'),
       [
+        this.connections.helius,
         this.connections.quicknode,
         this.connections.solanatracker,
         this.connections.solana,
@@ -563,7 +568,7 @@ export async function getCoinData(mintStr: string): Promise<CoinData> {
 
     // Check if the response is OK (status in 200–299 range)
     if (!response.ok) {
-      if (response.status === 429 || response.statusText.toLocaleLowerCase().includes("too many requests")) {
+      if (response.status === 500 || response.status === 429 || response.statusText.toLocaleLowerCase().includes("too many requests")) {
         const proxyResponse = await fetchWithProxy(url, { headers: response.headers })
         const data = await JSON.parse(proxyResponse) as CoinData
         return data
@@ -597,7 +602,7 @@ export async function getCoinComments(mintStr: string): Promise<CoinComment[]> {
     let data: { replies: CoinComment[] }
     // Check if the response is OK (status in 200–299 range)
     if (!response.ok) {
-      if (response.status === 429 || response.statusText.toLocaleLowerCase().includes("too many requests")) {
+      if (response.status === 500 || response.status === 429 || response.statusText.toLocaleLowerCase().includes("too many requests")) {
         const proxyResponse = await fetchWithProxy(url, { headers: response.headers })
         data = await JSON.parse(proxyResponse)
       } else {

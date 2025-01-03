@@ -82,8 +82,8 @@ for (const balance of balances) {
     action: "sell",
     mint: balance.mintAddress,
     tokenAmount: balance.balance,
-    slippage: 50,
-    priorityFee: 0.00002,
+    slippage: 100,
+    priorityFee: 0.0002,
   }))
 
 }
