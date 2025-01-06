@@ -48,6 +48,7 @@ export class InfluxDataFeeder extends BaseDataFeeder {
           solAmount: record.sol_amount,
           marketCapSol: record.market_cap_sol,
           timestamp: new Date(record._time).getTime(),
+          tradePrice: record.sol_amount / record.token_amount,
         }
       }
       binStart = binEnd

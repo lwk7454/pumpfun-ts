@@ -10,17 +10,17 @@ type HealthReport = {
 
 export class CommentsReaderStrategy extends Strategy {
 
-  LOSS_THRESHOLD = 0.97
-  PROFIT_THRESHOLD = 1.35
+  LOSS_THRESHOLD = 0.9
+  PROFIT_THRESHOLD = 1.3
   GROWTH_RATE_LOWER_BOUND = 5 // %
-  GROWTH_RATE_UPPER_BOUND = 30 // %
-  SELL_TIMEOUT = 1000 * 10
+  GROWTH_RATE_UPPER_BOUND = 1000 // %
+  SELL_TIMEOUT = 1000 * 60 * 5
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
-  GRACE_PERIOD = 1000 * 20 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 20 // milliseconds
+  GRACE_PERIOD = 1000 * 60 * 1 // milliseconds
+  LOOKBACK_PERIOD = 1000 * 60 * 0.9 // milliseconds
   SCAM_KEY_WORDS = ["scam", "rug", "fake project", "fraud"]
 
-  protected override MAX_IDLE_TIME: number = 1000 * 60 * 1
+  protected override MAX_IDLE_TIME: number = 1000 * 60 * 40
 
   private RAPID_INCREASE_THRESHOLD = 2.5;    // 250% increase
   private MIN_EVENTS_FOR_RAPID = 3;           // Minimum events to consider

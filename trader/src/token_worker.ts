@@ -33,7 +33,7 @@ export type WorkerResult = {
 }
 
 export class TokenWorker {
-  MAX_IDLE_TIME = 1000 * 60 * 20 // timeout if not buying. This is just a fail-safe, strategy should handle idle workers
+  MAX_IDLE_TIME = 1000 * 60 * 60 // timeout if not buying. This is just a fail-safe, strategy should handle idle workers
 
   private strategy: Strategy
   private tokenMint: string
@@ -188,11 +188,11 @@ export class TokenWorker {
 
   private async buyToken(solAmount: number): Promise<TradeAction | null> {
     if (isDryRun()) {
-      await wait(10) // simulate blockchain delay
+      await wait(5) // simulate blockchain delay
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
-      const gasCost = 0.000005// TODO: get from config
+      const gasCost = 0.000015// TODO: get from config
       const fees = solAmount * 0.01 + this.config.priorityFee + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
@@ -259,12 +259,12 @@ export class TokenWorker {
 
   private async sellToken(tokenAmount: number): Promise<TradeAction | null> {
     if (isDryRun()) {
-      await wait(10) // simulate blockchain delay
+      await wait(5) // simulate blockchain delay
 
       const lastEvent = this.events.at(-1)!
       const lastPrice = lastEvent.solAmount / lastEvent.tokenAmount
       const solAmount = tokenAmount * lastPrice
-      const gasCost = 0.000005 // TODO: get from config
+      const gasCost = 0.000015 // TODO: get from config
       const fees = solAmount * 0.01 + gasCost
 
       logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)

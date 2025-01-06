@@ -4,13 +4,13 @@ export type Decision = {
 }
 
 export abstract class Strategy {
-  protected startTime: number = Date.now()
+  protected startTime: number
   protected MAX_IDLE_TIME = 1000 * 60 * 5
   protected isBought: boolean = false
   protected isSold: boolean = false
 
   constructor(protected events: TokenEvent[], protected actions: TradeAction[], protected baseBid: number) {
-
+    this.startTime = Date.now()
   }
 
   public abstract onMarketCapUpdate(event: TokenEvent): Promise<Decision>
@@ -37,13 +37,8 @@ export abstract class Strategy {
   }
 
   protected getPrice(event: TokenEvent | TradeAction) {
-    if ('tokenAmount' in event) {
-      const e = event as TokenEvent
-      return e.solAmount / e.tokenAmount
-    } else {
-      const e = event as TradeAction
-      return e.tradePrice
-    }
+    if(event.tradePrice) return event.tradePrice
+    return event.solAmount / event.tokenAmount
   }
 }
 
@@ -74,7 +69,8 @@ export interface TradeEvent {
 export type TokenEvent = Pick<
   TradeEvent,
   "mint" | "txType" | "tokenAmount" | "solAmount" | "marketCapSol"
-> & {
+  > & {
+  tradePrice?: number
   traderPublicKey?: string
   timestamp: number
 }

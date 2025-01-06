@@ -3,7 +3,7 @@ import { FakeTime } from "@std/testing/time"
 import { Master } from '@/trader/master.ts'
 import { InfluxService, PumpFunService } from '@/trader/services/index.ts';
 // import { DummyStrategy } from '@/trader/strategy/index.ts';
-import { InfluxDataFeeder } from './data_feeders/influx_feeder.ts';
+import { InfluxDataFeeder, DebugFeeder } from './data_feeders/index.ts';
 import { assert } from '@std/assert';
 import { logger } from '@/shared/utils.ts';
 import { HealthyGrowthStrategy } from '@/trader/strategy/healthy_growth_strategy.ts';
@@ -19,6 +19,7 @@ Deno.test('Dry run', async () => {
   const WALLET_PUBLIC_KEY = ''
 
   const influxDataFeeder = new InfluxDataFeeder(startDate, endDate)
+  // const influxDataFeeder = new DebugFeeder(startDate, endDate)
   
 
   const influxService = new InfluxService()
@@ -27,14 +28,14 @@ Deno.test('Dry run', async () => {
   })
 
   const master = new Master({
-    maxOpenPositions: 30,
-    baseBid: 0.015,
+    maxOpenPositions: 20,
+    baseBid: 0.03,
     influxService,
     pumpFun,
-    defaultStrategy: CommentsReaderStrategy,
+    defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 90,
-    priorityFee: 0.000007,
+    priorityFee: 0.00001,
   })
 
   master.run();
@@ -42,16 +43,10 @@ Deno.test('Dry run', async () => {
   try {
     for await (const event of influxDataFeeder.nextEvent()) {
       // Advance the simulated time to the event's timestamp
-      while (event.timestamp > time.now) {
-        time.tick(100)
-      }
-
+      time.tick(event.timestamp - time.now)
       master.onEvent(event)
     }
-
-    while (endDate.getTime() > time.now) {
-      time.tick(100)
-    }
+    time.tick(endDate.getTime() - time.now)
   } catch (error) {
     logger.error("Error processing events:", error)
   } finally {

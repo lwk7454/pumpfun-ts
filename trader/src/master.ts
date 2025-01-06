@@ -233,6 +233,7 @@ export class Master {
             marketCapSol,
             traderPublicKey,
             timestamp: Date.now(),
+            tradePrice: solAmount / tokenAmount,
           }
 
           this.onEvent(tokenEvent)
@@ -382,7 +383,7 @@ if (import.meta.main) {
     influxService,
     pumpFun: pumpFun,
     // defaultStrategy: DummyStrategy,
-    defaultStrategy: CommentsReaderStrategy,
+    defaultStrategy: HealthyGrowthStrategy,
     walletPublicKey: WALLET_PUBLIC_KEY,
     defaultSlippage: 99.999,
     priorityFee: 0.0001,
