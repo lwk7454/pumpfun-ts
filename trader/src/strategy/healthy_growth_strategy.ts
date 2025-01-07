@@ -11,12 +11,12 @@ interface BinData {
 
 export class HealthyGrowthStrategy extends Strategy {
 
-  LOSS_THRESHOLD = 0.98
-  PROFIT_THRESHOLD = 1.3
+  LOSS_THRESHOLD = 0.9
+  PROFIT_THRESHOLD = 1.15
   SELL_TIMEOUT = 1000 * 60 * 5
   VOLATILITY_UPPER_BOUND = 2 // coefficient variance
-  GRACE_PERIOD = 1000 * 60 * 2 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 60 * 1.9 // milliseconds
+  GRACE_PERIOD = 1000 * 60 * 5 // milliseconds
+  LOOKBACK_PERIOD = 1000 * 60 * 4.9 // milliseconds
 
   protected override MAX_IDLE_TIME: number = 1000 * 60 * 40
 
@@ -24,12 +24,16 @@ export class HealthyGrowthStrategy extends Strategy {
     super(events, actions, baseBid)
   }
 
-  private BIN_SIZE_MS = 1000 * 20; // 10-second bins
+  private BIN_SIZE_MS = 1000 * 20;
   private MAX_ALLOWED_JUMP = 0.2; // e.g. 20% jump from one bin to the next
   private MAX_WITHIN_BIN_VOLATILITY = 0.03; // optional if you want to ensure each bin is stable
 
+  private otherFilters(): boolean {
+    return this.events[0].mint.endsWith("pump")
+  }
+
   private isSteadyGrowthNoPump(events: TokenEvent[]): boolean {
-    if (events.length < 2) return false
+    if (events.length < 10) return false
 
     const now = Date.now()
     // Filter by lookback window
@@ -181,7 +185,7 @@ export class HealthyGrowthStrategy extends Strategy {
     const lookBackData = this.events.filter(record => {
       return (now - record.timestamp) <= this.LOOKBACK_PERIOD
     })
-    const healthy = this.isSteadyGrowthNoPump(lookBackData)
+    const healthy = this.isSteadyGrowthNoPump(lookBackData) && this.otherFilters()
 
     if (healthy && !this.hasBought()) {
       return { action: "buy", amount: this.baseBid }
@@ -200,6 +204,8 @@ export class HealthyGrowthStrategy extends Strategy {
         logger.info(`[DummyStrategy] Sell stale coin, ratio: ${priceDiff}`)
         return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
       }
+    } else {
+      return { action: "close" }
     }
 
     return { action: "hold" }

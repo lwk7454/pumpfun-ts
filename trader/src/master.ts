@@ -108,7 +108,7 @@ export class Master {
 
     this.isRunning = false
 
-    const balance = await this.config.pumpFun.getSolBalance()
+    const balance = (isDryRun()) ? 0 : await this.config.pumpFun.getSolBalance()
 
     const report = this.generateReport()
     logger.info(

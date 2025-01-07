@@ -195,7 +195,7 @@ export class TokenWorker {
       const gasCost = 0.000015// TODO: get from config
       const fees = solAmount * 0.01 + this.config.priorityFee + gasCost
 
-      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${shorten(this.tokenMint)} @ ${lastPrice}`)
+      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: BUY for ${this.tokenMint} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "buy",
@@ -267,7 +267,7 @@ export class TokenWorker {
       const gasCost = 0.000015 // TODO: get from config
       const fees = solAmount * 0.01 + gasCost
 
-      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${shorten(this.tokenMint)} @ ${lastPrice}`)
+      logger.info(`[TokenWorker] ${new Date().toISOString()} Dry-run: SELL for ${this.tokenMint} @ ${lastPrice}`)
       return {
         mint: this.tokenMint,
         txType: "sell",

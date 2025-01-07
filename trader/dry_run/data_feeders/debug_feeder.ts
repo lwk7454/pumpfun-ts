@@ -32,7 +32,7 @@ export class DebugFeeder extends BaseDataFeeder {
 
       const fluxQuery = `
         |> range(start: ${binStart.toISOString()}, stop: ${binEnd.toISOString()})
-        |> filter(fn: (r) => r._measurement == "market_data" and r.mint == "DfmArfbfYf9FHAffEMHP5zadvirm4GjVCBLp5ZWFpump")
+        |> filter(fn: (r) => r._measurement == "market_data" and r.mint == "CFUrT5PT5kJT85dzJhJgVPgYNXmQYn2xcaMsvJZHpump")
         |> pivot(rowKey:["_time", "mint"], columnKey: ["_field"], valueColumn: "_value")
         |> filter(fn: (r) => r.market_cap_sol > 0 and r.tx_type != "create")
         |> group()
