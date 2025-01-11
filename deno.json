@@ -44,7 +44,8 @@
       "useTabs": false,
       "lineWidth": 120,
       "indentWidth": 2,
-      "singleQuote": true
+      "singleQuote": true,
+      "semiColons": false
     }
   }
 }

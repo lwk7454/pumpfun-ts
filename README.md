@@ -1,6 +1,7 @@
 # Pump.fun Typescript Monorepo
 
 ## Dev Setup
+- Install Node.js >= 20.0.0
 - Install Deno >= 2.0.0
 - Copy `.env.example` to `.env` and fill in the values
 - Run `deno install --allow-scripts`

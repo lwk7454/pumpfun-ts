@@ -14,7 +14,7 @@ type InfluxRecord = {
 export class DebugFeeder extends BaseDataFeeder {
   private influxService: InfluxService
 
-  constructor(startDate: Date, endDate: Date) {
+  constructor(startDate: Date, endDate: Date, private mint: string) {
     super(startDate, endDate)
     this.influxService = new InfluxService()
   }
@@ -32,7 +32,7 @@ export class DebugFeeder extends BaseDataFeeder {
 
       const fluxQuery = `
         |> range(start: ${binStart.toISOString()}, stop: ${binEnd.toISOString()})
-        |> filter(fn: (r) => r._measurement == "market_data" and r.mint == "CFUrT5PT5kJT85dzJhJgVPgYNXmQYn2xcaMsvJZHpump")
+        |> filter(fn: (r) => r._measurement == "market_data" and r.mint == "${this.mint}")
         |> pivot(rowKey:["_time", "mint"], columnKey: ["_field"], valueColumn: "_value")
         |> filter(fn: (r) => r.market_cap_sol > 0 and r.tx_type != "create")
         |> group()

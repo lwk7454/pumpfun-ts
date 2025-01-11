@@ -88,15 +88,17 @@ export class TokenWorker {
 
     while (this.commandQueue.length > 0 && !this.isComplete) {
       const command = this.commandQueue.shift()!
-      if (command.type === "marketCapUpdate") {
+      if (command.type === "marketCapUpdate") { // record event
         this.events.push(command.event)
       } else if (command.type === "force_close") {
         if(this.tokenBalance > 0) await this.handleDecision({ action: "sell", amount: this.tokenBalance })
         await this.handleDecision({ action: "close" })
       }
-      if (this.commandQueue.length !== 0) continue
+      // don't process if there are more commands
+      if (this.commandQueue.length !== 0) continue 
 
-      if (command.type === "marketCapUpdate") {
+      // only handle latest event
+      if (command.type === "marketCapUpdate") { 
         await this.handleMarketCapUpdate(command.event)
       } else if (command.type === "heartbeat") {
         await this.heartbeat()

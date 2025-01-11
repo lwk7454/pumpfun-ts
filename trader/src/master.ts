@@ -62,6 +62,7 @@ export class Master {
   private currentBid: number
   private maxLoss: number | null = Number(Deno.env.get("MAX_LOSS")) || null
   private startingBalance: number | null = null
+  private lastReportStr: string = ''
 
   constructor(private config: MasterConfig) {
     this.minSolBalance = this.config.maxOpenPositions * ((this.config.baseBid * 1.01) + this.config.priorityFee + 0.00203928)
@@ -255,8 +256,7 @@ export class Master {
         this.cleanStaleSubscriptions()
         this.updateOpenPositions()
         const report = this.generateReport()
-        logger.info(
-          `[Master] Report 
+        const reportStr = `[Master] Report 
           Profit: ${printSol(report.solDelta)} SOL, 
           Current Bid: ${printSol(this.currentBid)} SOL,
           Subscribed tokens: ${this.subscribedTokens.size}, 
@@ -264,7 +264,11 @@ export class Master {
           Fee: ${printSol(report.feeTotal)} SOL,
           Traded SOL: ${printSol(report.tradedSol)} SOL,
           Open positions: ${this.openPositions}
-        `)
+        `
+        if (reportStr !== this.lastReportStr) {
+          logger.info(reportStr)
+          this.lastReportStr = reportStr
+        }
 
         // check sol balance, close all if can't open max positions
         const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()

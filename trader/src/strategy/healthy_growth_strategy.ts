@@ -1,60 +1,72 @@
+import { logger } from '@/shared/utils.ts'
 import { Decision, Strategy, TokenEvent, TradeAction } from "@/trader/interfaces.ts"
-import { logger, shorten } from '@/shared/utils.ts'
-
 
 interface BinData {
   startTime: number
   endTime: number
-  averagePrice: number
+  avgMc: number
   volatility: number 
 }
 
+/**
+ * Strategy:
+ * Look for dev pump that MC has very consistent growth
+ * Sell if growth slowed down
+ * Most bins should have almost identical average increase
+ * Total growth should be less than MAX_PUMP_RATIO since launch
+ * Take profit at PROFIT_MARGIN or MAX_PUMP_RATIO
+ * 
+ */
+
+/**
+ * Things to track:
+ * Launch MC
+ * Where it started constant growth
+ * 
+ */
+
 export class HealthyGrowthStrategy extends Strategy {
 
-  LOSS_THRESHOLD = 0.9
-  PROFIT_THRESHOLD = 1.15
+  LOSS_THRESHOLD = 0.98
+  MAX_PUMP_RATIO = 1.65 // from pump start to end. 
+  PROFIT_MARGIN = 0.5
   SELL_TIMEOUT = 1000 * 60 * 5
-  VOLATILITY_UPPER_BOUND = 2 // coefficient variance
+  MIN_GROWTH_PER_BIN = 1.001
+  MAX_WITHIN_BIN_VOLATILITY = 0.05 // coefficient of variance
   GRACE_PERIOD = 1000 * 60 * 5 // milliseconds
-  LOOKBACK_PERIOD = 1000 * 60 * 4.9 // milliseconds
+  MIN_EVENTS_IN_GRACE_PERIOD = 5
+  LOOKBACK_PERIOD = 1000 * 60 * 5 - 10_000 // milliseconds
+  BIN_SIZE_MS = 1000 * 20;
+  MAX_BUY_MC = 400 / this.MAX_PUMP_RATIO  // don't buy if MC is close to migration
 
   protected override MAX_IDLE_TIME: number = 1000 * 60 * 40
+
+  private bins: BinData[] = []
 
   constructor(events: TokenEvent[], actions: TradeAction[], baseBid: number) {
     super(events, actions, baseBid)
   }
 
-  private BIN_SIZE_MS = 1000 * 20;
-  private MAX_ALLOWED_JUMP = 0.2; // e.g. 20% jump from one bin to the next
-  private MAX_WITHIN_BIN_VOLATILITY = 0.03; // optional if you want to ensure each bin is stable
-
-  private otherFilters(): boolean {
-    return this.events[0].mint.endsWith("pump")
+  private easyClose(): boolean {
+    return !this.events[0].mint.endsWith("pump")
   }
 
   private isSteadyGrowthNoPump(events: TokenEvent[]): boolean {
-    if (events.length < 10) return false
-
-    const now = Date.now()
-    // Filter by lookback window
-    const filtered = events.filter(e => now - e.timestamp <= this.LOOKBACK_PERIOD)
-    if (filtered.length < 2) return false
+    if (events.length < this.MIN_EVENTS_IN_GRACE_PERIOD) return false
 
     // Split data into bins
-    const bins = this.getBins(filtered, this.BIN_SIZE_MS)
-    if (bins.length < 2) return false
+    const bins = this.getBins(events)
+
+    if (bins.length < 3) return false
 
     for (let i = 1; i < bins.length; i++) {
       const prev = bins[i - 1]
       const curr = bins[i]
 
       // Check strictly increasing
-      if (curr.averagePrice <= prev.averagePrice) {
+      if (curr.avgMc <= prev.avgMc || curr.avgMc / prev.avgMc < this.MIN_GROWTH_PER_BIN) {
         return false
       }
-      // Check ratio to avoid suspicious pump or big dip
-      const ratio = curr.averagePrice / prev.averagePrice
-      if (ratio > 1 + this.MAX_ALLOWED_JUMP) return false   // too big a jump
 
       // each bin's volatility should be under threshold
       if (curr.volatility > this.MAX_WITHIN_BIN_VOLATILITY) {
@@ -62,76 +74,85 @@ export class HealthyGrowthStrategy extends Strategy {
       }
     }
 
+    // Pumped ratio should be less than max pump ratio - profit margin
+    if (this.getPumpRatio() > this.MAX_PUMP_RATIO - this.PROFIT_MARGIN) {
+      return false
+    }
+
     return true
   }
 
   /**
    * Binning function:
-   * Sorts by timestamp, then partitions into intervals of length binSizeMs.
+   * Partitions into intervals of length binSizeMs.
    * Computes weighted average (and weighted volatility) for each bin.
    */
-  private getBins(data: TokenEvent[], binSizeMs: number): BinData[] {
-    const sorted = [...data].sort((a, b) => a.timestamp - b.timestamp)
+  private getBins(data: TokenEvent[]): BinData[] {
+    const totalTime = data.at(-1)!.timestamp - data[0].timestamp
+    const binSize = Math.max(this.BIN_SIZE_MS, Math.floor(totalTime / data.length))
     const bins: BinData[] = []
 
-    let binStartTime = sorted[0].timestamp
-    let binEndTime = binStartTime + binSizeMs
+    let binStartTime = data[0].timestamp
+    let binEndTime = binStartTime + binSize
     let startIndex = 0
 
-    while (startIndex < sorted.length) {
+    while (startIndex < data.length) {
       const binSlice: TokenEvent[] = []
 
       while (
-        startIndex < sorted.length &&
-        sorted[startIndex].timestamp < binEndTime
+        startIndex < data.length &&
+        data[startIndex].timestamp < binEndTime
       ) {
-        binSlice.push(sorted[startIndex])
+        binSlice.push(data[startIndex])
         startIndex++
       }
 
       if (binSlice.length > 0) {
-        // Weighted average price
-        const weightedAvg = this.computeWeightedAveragePrice(binSlice)
-        // Weighted volatility
-        const weightedVol = this.computeWeightedVolatility(binSlice, weightedAvg)
+        const weightedMc = this.computeWeightedMarketCap(binSlice)
+        const weightedVol = this.computeWeightedVolatility(binSlice, weightedMc)
 
         bins.push({
           startTime: binStartTime,
           endTime: binEndTime,
-          averagePrice: weightedAvg,
+          avgMc: weightedMc,
           volatility: weightedVol,
+        })
+      } else {
+        bins.push({
+          startTime: binStartTime,
+          endTime: binEndTime,
+          avgMc: data[startIndex - 1]?.marketCapSol || 0,
+          volatility: 0,
         })
       }
 
       // Move to next bin
       binStartTime = binEndTime
-      binEndTime += binSizeMs
+      binEndTime += binSize
     }
+
+    this.bins = bins
 
     return bins
   }
 
-  /**
-   * Weighted average price using marketCapSol as weight.
-   * If you want a custom formula, replace `w = e.marketCapSol` with your own logic.
-   */
-  private computeWeightedAveragePrice(events: TokenEvent[]): number {
-    if (!events.length) return 0
+  private getPumpRatio(): number {
+    return this.bins.at(-1)!.avgMc / this.bins[0]!.avgMc
+  }
 
-    let totalWeightedPrice = 0
-    let totalWeight = 0
-
+  private computeWeightedMarketCap(events: TokenEvent[]): number {
+    if (!events.length) return 0;
+  
+    let numerator = 0;
+    let denominator = 0;
+  
     for (const e of events) {
-      // By default, let's treat marketCapSol as the weight.
-      const w = e.marketCapSol
-      // If the event doesn't have a direct price, you might derive it from solAmount/tokenAmount
-      const price = this.getPrice(e)
-
-      totalWeightedPrice += price * w
-      totalWeight += w
+      const weight = e.solAmount
+      numerator += e.marketCapSol * weight;
+      denominator += weight;
     }
-
-    return totalWeight === 0 ? 0 : (totalWeightedPrice / totalWeight)
+  
+    return denominator === 0 ? 0 : (numerator / denominator);
   }
 
   /**
@@ -139,17 +160,16 @@ export class HealthyGrowthStrategy extends Strategy {
    * var_w = ( Σ(w_i * (x_i - x̄)^2 ) ) / Σ(w_i)
    * Then take sqrt(var_w) / mean to get the coefficient of variation.
    */
-  private computeWeightedVolatility(events: TokenEvent[], meanPrice: number): number {
+  private computeWeightedVolatility(events: TokenEvent[], meanMc: number): number {
     if (!events.length) return 0
 
     let weightedSquaredDiffSum = 0
     let totalWeight = 0
 
     for (const e of events) {
-      const w = e.marketCapSol
-      const price = this.getPrice(e)
+      const w = e.solAmount
 
-      const diff = price - meanPrice
+      const diff = e.marketCapSol - meanMc
       weightedSquaredDiffSum += w * diff * diff
       totalWeight += w
     }
@@ -158,7 +178,9 @@ export class HealthyGrowthStrategy extends Strategy {
 
     const variance = weightedSquaredDiffSum / totalWeight
     // Coefficient of variation:
-    return meanPrice === 0 ? 0 : (Math.sqrt(variance) / meanPrice)
+    const cv = meanMc === 0 ? 0 : (Math.sqrt(variance) / meanMc)
+
+    return cv
   }
 
   async onMarketCapUpdate(_event: TokenEvent): Promise<Decision> {
@@ -169,40 +191,46 @@ export class HealthyGrowthStrategy extends Strategy {
     const decision = await super.onHeartbeat()
     if (decision.action !== "hold") return decision
 
-    if (this.hasBought() && this.hasSold()) {
+    if (
+      this.easyClose() ||
+      this.hasBought() && this.hasSold()
+    ) {
       return { action: "close" }
-    }
-
-    if (this.events.length < 2) {
-      return { action: "hold" }
     }
 
     if (!this.hasBought() && this.getTokenAge() < this.GRACE_PERIOD) {  // grace period logic
       return { action: "hold" }
     }
 
-    const now = Date.now()
-    const lookBackData = this.events.filter(record => {
-      return (now - record.timestamp) <= this.LOOKBACK_PERIOD
-    })
-    const healthy = this.isSteadyGrowthNoPump(lookBackData) && this.otherFilters()
+    const firstEventTime = this.events[0].timestamp
+    // Filter out first 10 seconds
+    const lookBackData = this.events.filter(e => e.timestamp - firstEventTime > 10_000)
+    const healthy = this.isSteadyGrowthNoPump(lookBackData)
+    const underMaxBuyMc = this.events.at(-1)!.marketCapSol < this.MAX_BUY_MC
 
-    if (healthy && !this.hasBought()) {
+    if (healthy && underMaxBuyMc && !this.hasBought()) {
       return { action: "buy", amount: this.baseBid }
     } else if (this.hasBought()) {
       const buyEvent = this.actions.find(action => action.txType === "buy")!
+      const tokenAmount = Math.abs(buyEvent.tokenAmount)
       const lastEvent = this.events.at(-1)!
-      const priceDiff = this.getPrice(lastEvent) / this.getPrice(buyEvent)
+      const profitRatio = this.getPrice(lastEvent) / this.getPrice(buyEvent)
+      const prevBin = this.bins.at(-1)!
+      const prevBinGrowth = lastEvent.marketCapSol / prevBin.avgMc
 
-      if (priceDiff < this.LOSS_THRESHOLD) {
-        logger.info(`[DummyStrategy] Price loss sell, ratio: ${priceDiff}`)
-        return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
-      } else if (priceDiff > this.PROFIT_THRESHOLD) {
-        logger.info(`[DummyStrategy] Price profit sell, ratio: ${priceDiff}`)
-        return { action: "sell", amount: Math.abs(buyEvent.tokenAmount) }
-      } else if (Date.now() - lastEvent.timestamp > this.SELL_TIMEOUT) {
-        logger.info(`[DummyStrategy] Sell stale coin, ratio: ${priceDiff}`)
-        return { action: 'sell', amount: Math.abs(buyEvent.tokenAmount) }
+      if (prevBinGrowth < this.LOSS_THRESHOLD) {
+        logger.info(`[DummyStrategy] Unhealthy growth sell, ratio: ${profitRatio}. prevBinGrowth: ${prevBinGrowth}`)
+        return { action: "sell", amount: tokenAmount }
+      }
+
+      if (this.getPumpRatio() > this.MAX_PUMP_RATIO) {
+        logger.info(`[DummyStrategy] Price profit sell, ratio: ${profitRatio}`)
+        return { action: "sell", amount: tokenAmount }
+      }
+
+      if (Date.now() - lastEvent.timestamp > this.SELL_TIMEOUT) {
+        logger.info(`[DummyStrategy] Sell stale coin, ratio: ${profitRatio}`)
+        return { action: 'sell', amount: tokenAmount }
       }
     } else {
       return { action: "close" }

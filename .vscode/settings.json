@@ -3,5 +3,6 @@
     "--allow-all",
     "--no-check",
     "--env-file"
-  ]
+  ],
+  "deno.enable": true
 }
