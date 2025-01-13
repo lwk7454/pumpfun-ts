@@ -5,7 +5,6 @@ import { InfluxService, PumpFunService } from "@/trader/services/index.ts"
 import { HealthyGrowthStrategy } from '@/trader/strategy/index.ts'
 import { TokenWorker, WorkerResult } from "@/trader/token_worker.ts"
 import { parseArgs } from "jsr:@std/cli/parse-args"
-import { CommentsReaderStrategy } from '@/trader/strategy/comments_reader_strategy.ts';
 
 export interface MasterConfig {
   maxOpenPositions: number
@@ -256,6 +255,7 @@ export class Master {
         this.cleanStaleSubscriptions()
         this.updateOpenPositions()
         const report = this.generateReport()
+        const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
         const reportStr = `[Master] Report 
           Profit: ${printSol(report.solDelta)} SOL, 
           Current Bid: ${printSol(this.currentBid)} SOL,
@@ -263,24 +263,26 @@ export class Master {
           Traded tokens: ${report.tradedTokenCount},
           Fee: ${printSol(report.feeTotal)} SOL,
           Traded SOL: ${printSol(report.tradedSol)} SOL,
-          Open positions: ${this.openPositions}
+          Open positions: ${this.openPositions},
+          Current Balance: ${printSol(balance)} SOL
         `
         if (reportStr !== this.lastReportStr) {
           logger.info(reportStr)
           this.lastReportStr = reportStr
         }
 
-        // check sol balance, close all if can't open max positions
-        const balance = isDryRun() ? (10 + report.solDelta) : await this.config.pumpFun.getSolBalance()
         if (this.startingBalance === null) this.startingBalance = balance
         if (bidRatio === 0) bidRatio = this.config.baseBid / balance
         this.currentBid = Math.max(this.config.baseBid, bidRatio * balance)
 
+        // check max loss, close all if loss is too high
         if (this.maxLoss && report.solDelta < -this.maxLoss) {
           logger.info(`[Master] Lost more than ${this.maxLoss}, closing all positions`, { balance, minSolBalance: this.minSolBalance })
           this.close()
-        } else if (balance < this.minSolBalance) {
-          logger.info("[Master] Balance is too low, closing all positions", { balance, minSolBalance: this.minSolBalance })
+        }
+        // check sol balance, close all if can't open max positions 
+        else if (balance + this.openPositions * this.currentBid < this.minSolBalance) {
+          logger.info("[Master] Balance is too low, closing all positions", { balance, minSolBalance: this.minSolBalance, openPositions: this.openPositions })
           this.close()
         }
 
@@ -361,8 +363,8 @@ if (import.meta.main) {
   const args = parseArgs(Deno.args, {
     string: ["maxOpenPositions", "baseBid"],
     default: {
-      maxOpenPositions: "30",
-      baseBid: "0.015",
+      maxOpenPositions: "15",
+      baseBid: "0.03",
     },
     alias: {
       maxOpenPositions: ["concurrency"],

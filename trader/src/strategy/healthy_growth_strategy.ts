@@ -15,7 +15,7 @@ interface BinData {
  * Most bins should have almost identical average increase
  * Total growth should be less than MAX_PUMP_RATIO since launch
  * Take profit at PROFIT_MARGIN or MAX_PUMP_RATIO
- * 
+ * Watch out for high initial MC, use it to find bin growth ratio
  */
 
 /**
@@ -33,7 +33,7 @@ export class HealthyGrowthStrategy extends Strategy {
   SELL_TIMEOUT = 1000 * 60 * 5
   MIN_GROWTH_PER_BIN = 1.001
   MAX_WITHIN_BIN_VOLATILITY = 0.05 // coefficient of variance
-  GRACE_PERIOD = 1000 * 60 * 5 // milliseconds
+  GRACE_PERIOD = 1000 * 60 * 2 // milliseconds
   MIN_EVENTS_IN_GRACE_PERIOD = 5
   LOOKBACK_PERIOD = 1000 * 60 * 5 - 10_000 // milliseconds
   BIN_SIZE_MS = 1000 * 20;
@@ -88,15 +88,14 @@ export class HealthyGrowthStrategy extends Strategy {
    * Computes weighted average (and weighted volatility) for each bin.
    */
   private getBins(data: TokenEvent[]): BinData[] {
-    const totalTime = data.at(-1)!.timestamp - data[0].timestamp
-    const binSize = Math.max(this.BIN_SIZE_MS, Math.floor(totalTime / data.length))
     const bins: BinData[] = []
 
     let binStartTime = data[0].timestamp
-    let binEndTime = binStartTime + binSize
+    let binEndTime = binStartTime + this.BIN_SIZE_MS
     let startIndex = 0
+    const now = Date.now()
 
-    while (startIndex < data.length) {
+    while (binEndTime < now) {
       const binSlice: TokenEvent[] = []
 
       while (
@@ -121,14 +120,14 @@ export class HealthyGrowthStrategy extends Strategy {
         bins.push({
           startTime: binStartTime,
           endTime: binEndTime,
-          avgMc: data[startIndex - 1]?.marketCapSol || 0,
+          avgMc: bins.at(-1)?.avgMc || 0,
           volatility: 0,
         })
       }
 
       // Move to next bin
       binStartTime = binEndTime
-      binEndTime += binSize
+      binEndTime += this.BIN_SIZE_MS
     }
 
     this.bins = bins
@@ -136,6 +135,7 @@ export class HealthyGrowthStrategy extends Strategy {
     return bins
   }
 
+  // from launch to current MC ratio
   private getPumpRatio(): number {
     return this.bins.at(-1)!.avgMc / this.bins[0]!.avgMc
   }
@@ -193,7 +193,7 @@ export class HealthyGrowthStrategy extends Strategy {
 
     if (
       this.easyClose() ||
-      this.hasBought() && this.hasSold()
+      (this.hasBought() && this.hasSold())
     ) {
       return { action: "close" }
     }
@@ -219,17 +219,17 @@ export class HealthyGrowthStrategy extends Strategy {
       const prevBinGrowth = lastEvent.marketCapSol / prevBin.avgMc
 
       if (prevBinGrowth < this.LOSS_THRESHOLD) {
-        logger.info(`[DummyStrategy] Unhealthy growth sell, ratio: ${profitRatio}. prevBinGrowth: ${prevBinGrowth}`)
+        logger.info(`[HealthyGrowthStrategy] Unhealthy growth sell, ratio: ${profitRatio}. prevBinGrowth: ${prevBinGrowth}`)
         return { action: "sell", amount: tokenAmount }
       }
 
       if (this.getPumpRatio() > this.MAX_PUMP_RATIO) {
-        logger.info(`[DummyStrategy] Price profit sell, ratio: ${profitRatio}`)
+        logger.info(`[HealthyGrowthStrategy] Price profit sell, ratio: ${profitRatio}`)
         return { action: "sell", amount: tokenAmount }
       }
 
       if (Date.now() - lastEvent.timestamp > this.SELL_TIMEOUT) {
-        logger.info(`[DummyStrategy] Sell stale coin, ratio: ${profitRatio}`)
+        logger.info(`[HealthyGrowthStrategy] Sell stale coin, ratio: ${profitRatio}`)
         return { action: 'sell', amount: tokenAmount }
       }
     } else {

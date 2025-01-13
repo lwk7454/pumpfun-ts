@@ -9,12 +9,12 @@ import { DebugFeeder } from './data_feeders/index.ts';
 
 Deno.test('Debug run', async () => {
   Deno.env.set('DRY_RUN', 'true')
-  const startDate = new Date(Deno.env.get('START_DATE') || '2024-12-27T03:30:00Z')
-  const endDate = new Date(Deno.env.get('END_DATE') || '2024-12-27T03:32:00Z')
+  const startDate = new Date('2025-01-11T10:30:00Z')
+  const endDate = new Date('2025-01-11T23:32:00Z')
   using time = new FakeTime(startDate)
   const WALLET_SECRET = ''
   const WALLET_PUBLIC_KEY = ''
-  const mint = 'Aj3GjarZxGUKeYLmojSQjsNmyVDvRamY68PXrEtcpump'
+  const mint = '66621K724qqUcyj7RUrXHCfibZJNN581XbRuzidJpump'
   const influxDataFeeder = new DebugFeeder(startDate, endDate, mint)
   const influxService = new InfluxService()
   const pumpFun = new PumpFunService({ walletSecretKey: WALLET_SECRET })
